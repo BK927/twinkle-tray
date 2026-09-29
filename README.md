@@ -1,3 +1,5 @@
+> **WinUI 3 fork · WinUI 3 이식 버전** — The `winui3` branch adds a native C#/WinUI 3 application while retaining the original Electron source. 기능 이식 현황, 빌드 및 실행 방법은 [WinUI 3 안내](winui/README.md)를 확인하세요. Feature parity is incomplete; the original upstream README follows below.
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/xanderfrangos/twinkle-tray/master/src/assets/logo.png" width="128px" height="128px" alt="Twinkle Tray brightness slider logo">
 </p>

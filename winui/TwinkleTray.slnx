@@ -1,0 +1,10 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="ARM64" />
+  </Configurations>
+  <Project Path="TwinkleTray.Core/TwinkleTray.Core.csproj" />
+  <Project Path="TwinkleTray.Core.Tests/TwinkleTray.Core.Tests.csproj" />
+  <Project Path="TwinkleTray.Hardware/TwinkleTray.Hardware.csproj" />
+  <Project Path="TwinkleTray.WinUI/TwinkleTray.WinUI.csproj" />
+</Solution>
