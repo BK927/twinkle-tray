@@ -1,16 +1,32 @@
-# UI polish · 0.2.2
+# Twinkle Tray Native: UI layout and verification
 
-The native port retains the upstream navigation order, monitor controls and settings format. This release focuses on consistent Windows styling, smaller-window layouts and editing continuity.
+Twinkle Tray Native retains the upstream navigation order, monitor controls and settings format. Version 0.3.0 builds on the responsive settings work from 0.2.2 and aligns the tray structure with the original source. The local 0.3.0 acceptance run passed; the package has not yet been released and these changes have no completed CI result yet.
 
 ## Layout and interaction
 
 - Shared system-theme styles use 14 DIP body text, 13 DIP secondary text, 28 DIP page headings and 32 DIP toolbar buttons. Theme and high-contrast brushes retain the Windows accent and contrast choices; no fonts are installed.
 - The tray remains 360 DIP wide. Its rendered content determines the height, bounded by the display work area. Long names have tooltips, large device lists scroll, and routine value refreshes retain existing slider controls.
+- Windows 11 style places its toolbar below the monitor controls; Windows 10 style keeps the toolbar above them. Brightness numbers sit beside their sliders and accept direct input. Linked mode shows one brightness slider, while additional monitor features use a compact layout. Unlinking restores the individual controls.
 - Settings begin at 1040×740 DIP. Below 960 DIP the navigation becomes compact; below 600 DIP of row space, controls move under their labels. Related settings have section headings, and monitor, schedule and profile editors have collapsible summary cards.
 - Rebuilding a settings page preserves expansion, scroll position, focused editor and uncommitted text. Invalid field values have nearby error messages and do not replace the last valid saved value.
 - The brightness overlay shares the panel's visual conventions and bounds its content to the display work area. Unsupported backdrops and high contrast use a solid background.
 
-## Verified 0.2.2 result
+## Verified local 0.3.0 result
+
+The Windows x64 run passed **46 core tests, 11 settings pages, 44 simulated runtime assertions (including 20 automation regressions), 144 layout cases, 36 interaction/popup checks and 11 IPC groups**. It generated **14 preview PNGs**. The UI report records zero hardware writes, zero user-settings writes and no errors.
+
+<!-- 0.3.0 RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
+The complete run finished at **2026-09-29 09:31:42 UTC**. Evidence is in `artifacts/test-results/20260929T092859437-f5d0177dedf34b74bdce2455a08d9499/{smoke-test,ui-layout-test,integration-test}.json`; all three reports have `Passed: true`.
+
+The 36 UI checks retain the six settings-editing checks and 18 tray/OSD layout checks from the earlier run, then add twelve tray checks: Windows 11/10 toolbar placement, numeric-field placement, per-monitor numeric editing, invalid-input recovery, range limits, draft/selection retention during value refresh, write suppression during refresh, linked editing, unlinking, compact-feature numeric editing isolated to its VCP control, and a pending input-source selection blocked while refresh is active. The 144 settings layout cases retain the same language/theme/viewport and empty/error matrix described below.
+
+Representative new captures were visually reviewed for the Windows 11 bottom toolbar, values beside sliders, the single linked slider and compact extra controls. The upstream comparison used its source; **an installed upstream panel was not inspected live**. No pixel-for-pixel or comprehensive glyph-quality claim follows from this review.
+
+A separate interactive demo check confirmed wheel input over the slider (72→67) and monitor-name row (67→72), numeric entry of 63 with Enter while the other display stayed at 48, and F5 refresh preserving the values. These observations used simulated displays and did not write real monitor hardware.
+
+Every preview reports an observed host rasterization scale of **1.5 (150%)**. Requested 100/125/150/200% outputs are relative bitmap scales, not separate Windows DPI sessions. Actual high contrast was off and was not exercised. These environment limits also apply to the new passing run.
+
+## Historical 0.2.2 result
 
 The Windows x64 native run passed **11 settings pages and 41 simulated runtime assertions**, including 20 automation regressions. The UI report passed **144 layout cases and 24 interaction/popup checks**, and generated **11 preview PNGs**. The independent core suite also passed **46/46 tests**, and the final integration report passed **11 IPC test groups**. These checks used isolated fixtures; UI hardware writes and user-settings writes were both zero.
 
@@ -35,8 +51,8 @@ The layout matrix covers all eleven settings pages, Korean and English, light an
 
 Representative renderings request `RenderTargetBitmap` outputs at 100%, 125%, 150% and 200% relative to the current host render scale. These are **render-scale simulations**, not native Windows sessions at those DPI settings. Each preview records its DIP dimensions, actual pixel dimensions, host rasterization scale and effective pixels per DIP. The report also records whether Windows high contrast was active. Bounds checks verify arranged geometry and scroll access; they do not establish glyph quality or complete screen-reader compatibility. PNGs also require visual review.
 
-The isolated smoke run has a 180-second timeout. A `progress.json` file beside its preview images records the current stage so a slow run can be distinguished from a stalled one. Popup checks compare actual native window bounds with the work area, compare arranged XAML against the actual client size, and move the real scroll viewport when content overflows.
+The isolated smoke run has a 240-second timeout. A `progress.json` file beside its preview images records the current stage so a slow run can be distinguished from a stalled one. Popup checks compare actual native window bounds with the work area, compare arranged XAML against the actual client size, and move the real scroll viewport when content overflows.
 
 ## Compatibility
 
-The UI changes do not alter brightness scheduling, monitor write APIs, CLI/UDP interfaces or the saved settings schema. Existing settings load without migration. Device-specific results from 0.2.1 remain in [VERIFICATION.md](VERIFICATION.md); UI tests do not repeat real monitor writes. Actual DPI switching, a Windows high-contrast session, Windows 10, Apple displays and ARM64 execution remain separate acceptance environments.
+The UI changes do not alter brightness scheduling, monitor write APIs, CLI/UDP interfaces or the saved settings schema. Existing settings load without migration. Device-specific results from 0.2.1 remain in [VERIFICATION.md](VERIFICATION.md); UI tests do not repeat real monitor writes. Actual DPI switching, a Windows high-contrast session and Windows 10 require separate acceptance. The supported release target is Windows x64; macOS, Apple hardware and Windows ARM64 execution are outside the current support scope.

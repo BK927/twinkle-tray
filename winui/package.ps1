@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'ARM64')][string] $Architecture = 'x64',
-    [string] $Version = '0.2.2',
+    [string] $Version = '0.3.0',
     [ValidateRange(0, 65535)][int] $MsixRevision = 0,
     [string] $Publisher = 'CN=BK927',
     [string] $PublishDirectory,
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($Version -cnotmatch '^(?<base>(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?:-(?<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$') {
-    throw 'Version must be a semantic version, such as 0.2.2 or 0.3.0-beta.1.'
+    throw 'Version must be a semantic version, such as 0.3.0 or 0.4.0-beta.1.'
 }
 $numericVersion = $Matches['base']
 $prerelease = $Matches['pre']
@@ -25,7 +25,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $source 'TwinkleTray.WinUI.exe'))) {
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 if ($output.Equals($source, [StringComparison]::OrdinalIgnoreCase) -or $output.StartsWith($source.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Package output must be outside the application publish directory.' }
 New-Item -ItemType Directory -Path $output -Force | Out-Null
-$name = "TwinkleTray-WinUI3-$Version-$Architecture"
+$name = "TwinkleTray-Native-$Version-$Architecture"
 $zip = Join-Path $output ($name + '.zip')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $deliverables = [Collections.Generic.List[string]]::new()
@@ -79,12 +79,12 @@ try {
  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
  IgnorableNamespaces="uap desktop rescap">
  <Identity Name="BK927.TwinkleTray.WinUI" Publisher="$publisherXml" Version="$msixVersion" ProcessorArchitecture="$arch" />
- <Properties><DisplayName>Twinkle Tray · WinUI 3</DisplayName><PublisherDisplayName>BK927</PublisherDisplayName><Logo>Assets\Square50.png</Logo><Description>Community native WinUI 3 port of Twinkle Tray</Description></Properties>
+ <Properties><DisplayName>Twinkle Tray Native</DisplayName><PublisherDisplayName>BK927</PublisherDisplayName><Logo>Assets\Square50.png</Logo><Description>Twinkle Tray Native — community Windows brightness control built with WinUI 3</Description></Properties>
  <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
  <Resources><Resource Language="en-us" /></Resources>
  <Applications><Application Id="TwinkleTray" Executable="TwinkleTray.WinUI.exe" EntryPoint="Windows.FullTrustApplication">
-  <uap:VisualElements DisplayName="Twinkle Tray · WinUI 3" Description="Control display brightness" BackgroundColor="transparent" Square44x44Logo="Assets\Square44.png" Square150x150Logo="Assets\Square150.png" />
-  <Extensions><desktop:Extension Category="windows.startupTask" Executable="TwinkleTray.WinUI.exe" EntryPoint="Windows.FullTrustApplication"><desktop:StartupTask TaskId="TwinkleTrayStartup" Enabled="false" DisplayName="Twinkle Tray · WinUI 3" /></desktop:Extension></Extensions>
+  <uap:VisualElements DisplayName="Twinkle Tray Native" Description="Control display brightness" BackgroundColor="transparent" Square44x44Logo="Assets\Square44.png" Square150x150Logo="Assets\Square150.png" />
+  <Extensions><desktop:Extension Category="windows.startupTask" Executable="TwinkleTray.WinUI.exe" EntryPoint="Windows.FullTrustApplication"><desktop:StartupTask TaskId="TwinkleTrayStartup" Enabled="false" DisplayName="Twinkle Tray Native" /></desktop:Extension></Extensions>
  </Application></Applications>
  <Capabilities><rescap:Capability Name="runFullTrust" /><DeviceCapability Name="location" /></Capabilities>
 </Package>

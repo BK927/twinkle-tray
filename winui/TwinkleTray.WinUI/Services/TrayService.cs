@@ -41,7 +41,7 @@ internal sealed class TrayService : IDisposable
         _instance = GetModuleHandle(null);
         var wc = new WindowClass { Size = (uint)Marshal.SizeOf<WindowClass>(), Proc = _proc, Instance = _instance, ClassName = _className };
         if (RegisterClassEx(ref wc) == 0) throw new Win32Exception(Marshal.GetLastWin32Error());
-        _window = CreateWindowEx(0, _className, "Twinkle Tray WinUI message window", 0, 0, 0, 0, 0, 0, 0, _instance, 0);
+        _window = CreateWindowEx(0, _className, "Twinkle Tray Native message window", 0, 0, 0, 0, 0, 0, 0, _instance, 0);
         if (_window == 0)
         {
             var error = Marshal.GetLastWin32Error();
@@ -88,7 +88,7 @@ internal sealed class TrayService : IDisposable
     {
         Size = (uint)Marshal.SizeOf<NotifyIconData>(), Window = _window, Id = 1,
         Flags = 1 | 2 | 4 | 0x80, CallbackMessage = Callback, Icon = _icon,
-        Tip = "Twinkle Tray · WinUI 3", Info = "", InfoTitle = ""
+        Tip = "Twinkle Tray Native", Info = "", InfoTitle = ""
     };
 
     private void AddIcon()

@@ -1,4 +1,4 @@
-name: WinUI 3
+name: Twinkle Tray Native
 
 on:
   push:
@@ -96,7 +96,7 @@ jobs:
         if: always() && github.event_name == 'workflow_dispatch' && inputs.run_gui_smoke && matrix.architecture == 'x64'
         uses: actions/upload-artifact@v7
         with:
-          name: TwinkleTray-WinUI3-test-results-${{ github.sha }}
+          name: TwinkleTray-Native-test-results-${{ github.sha }}
           path: winui/artifacts/test-results/**
           if-no-files-found: ignore
           retention-days: 14
@@ -104,7 +104,7 @@ jobs:
       - name: Upload portable build
         uses: actions/upload-artifact@v7
         with:
-          name: TwinkleTray-WinUI3-${{ matrix.architecture }}-${{ github.sha }}
+          name: TwinkleTray-Native-${{ matrix.architecture }}-${{ github.sha }}
           path: winui/artifacts/packages/*
           if-no-files-found: error
           retention-days: 14

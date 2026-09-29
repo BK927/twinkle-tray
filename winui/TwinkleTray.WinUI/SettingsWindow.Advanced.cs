@@ -47,7 +47,7 @@ public sealed partial class SettingsWindow
         Section(T("NATIVE_STARTUP_RESTORE", "Startup and restoration"));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_STARTUP", "Launch at startup"), null,
             Toggle(_settings.RunAtStartup, value => { _settings.RunAtStartup = value; Save(); })));
-        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_TITLE", "Apply brightness at startup"), T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_DESC", "Restore the last known brightness for each display when Twinkle Tray starts."),
+        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_TITLE", "Apply brightness at startup"), T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_DESC", "Restore the last known brightness for each display when Twinkle Tray Native starts."),
             Toggle(_settings.RestoreBrightnessAtStartup, value => { _settings.RestoreBrightnessAtStartup = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_DISABLE_ON_LOCK_SCREEN_TITLE", "Disable on Lock Screen"), T("SETTINGS_GENERAL_DISABLE_ON_LOCK_SCREEN_DESC", "Do not access monitors while the user session is locked."),
             Toggle(_settings.DisableOnLockScreen, value => { _settings.DisableOnLockScreen = value; Save(); })));
@@ -539,7 +539,7 @@ public sealed partial class SettingsWindow
         if (_actions.ExportSettingsAsync is not null) transfer.Children.Add(ActionButton(T("NATIVE_EXPORT", "Export settings"), _actions.ExportSettingsAsync));
         if (_actions.ResetSettingsAsync is not null) transfer.Children.Add(ActionButton(T("SETTINGS_GENERAL_RESET_BUTTON", "Reset settings"), async () =>
         {
-            var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = T("SETTINGS_GENERAL_RESET_TITLE", "Reset settings"), Content = T("NATIVE_RESET_CONFIRM", "Reset all Twinkle Tray settings to their defaults?"), PrimaryButtonText = T("SETTINGS_GENERAL_RESET_BUTTON", "Reset settings"), CloseButtonText = T("GENERIC_CANCEL", "Cancel"), DefaultButton = ContentDialogButton.Close };
+            var dialog = new ContentDialog { XamlRoot = Root.XamlRoot, Title = T("SETTINGS_GENERAL_RESET_TITLE", "Reset settings"), Content = T("NATIVE_RESET_CONFIRM", "Reset all Twinkle Tray Native settings to their defaults?"), PrimaryButtonText = T("SETTINGS_GENERAL_RESET_BUTTON", "Reset settings"), CloseButtonText = T("GENERIC_CANCEL", "Cancel"), DefaultButton = ContentDialogButton.Close };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary) { await _actions.ResetSettingsAsync(); Localize(); ApplyTheme(); RenderPage(); }
         }));
         if (_settings.ImportWarnings.Count > 0) transfer.Children.Add(Description(string.Join(Environment.NewLine, _settings.ImportWarnings)));
@@ -567,14 +567,14 @@ public sealed partial class SettingsWindow
 
     private void RenderUpdates()
     {
-        Heading(T("SETTINGS_UPDATES_TITLE", "Updates"), $"Twinkle Tray · WinUI 3  {typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3)}");
-        PageContent.Children.Add(SettingRow(T("SETTINGS_UPDATES_AUTOMATIC_TITLE", "Automatically check for new versions"), T("SETTINGS_UPDATES_AUTOMATIC_DESC", "Check the WinUI 3 fork for new releases."),
+        Heading(T("SETTINGS_UPDATES_TITLE", "Updates"), $"Twinkle Tray Native  {typeof(SettingsWindow).Assembly.GetName().Version?.ToString(3)}");
+        PageContent.Children.Add(SettingRow(T("SETTINGS_UPDATES_AUTOMATIC_TITLE", "Automatically check for new versions"), T("SETTINGS_UPDATES_AUTOMATIC_DESC", "Check Twinkle Tray Native for new releases."),
             Toggle(_settings.CheckForUpdates, value => { _settings.CheckForUpdates = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_UPDATES_CHANNEL", "Update channel"), null,
             Choice([("stable", T("SETTINGS_UPDATES_BRANCH_STABLE", "Stable (default)")), ("beta", T("SETTINGS_UPDATES_BRANCH_BETA", "Beta"))], _settings.UpdateChannel, value => { _settings.UpdateChannel = value; Save(); })));
         if (_actions.CheckUpdatesAsync is not null) PageContent.Children.Add(ActionButton(T("NATIVE_CHECK_UPDATES", "Check for updates"), _actions.CheckUpdatesAsync));
         if (_actions.InstallUpdateAsync is not null) PageContent.Children.Add(ActionButton(T("NATIVE_INSTALL_UPDATE", "Download and install update"), _actions.InstallUpdateAsync));
-        PageContent.Children.Add(new HyperlinkButton { Content = T("NATIVE_RELEASES", "Release history"), NavigateUri = new Uri("https://github.com/BK927/twinkle-tray/releases"), HorizontalAlignment = HorizontalAlignment.Left });
+        PageContent.Children.Add(new HyperlinkButton { Content = T("NATIVE_RELEASES", "Release history"), NavigateUri = new Uri("https://github.com/BK927/twinkle-tray-native/releases"), HorizontalAlignment = HorizontalAlignment.Left });
     }
 
     private IReadOnlyList<MonitorSnapshot> OrderedMonitors() => _monitors.OrderBy(m => GetMonitorSettings(m.Id).Order).ThenBy(m => m.Name).ToArray();

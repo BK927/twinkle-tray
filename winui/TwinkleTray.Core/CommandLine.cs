@@ -29,7 +29,7 @@ public sealed record CommandLineOptions
 public static class CommandLine
 {
     public const string HelpText = """
-        Twinkle Tray for WinUI 3
+        Twinkle Tray Native
 
         --List                           List connected monitors
         --All                            Select all monitors

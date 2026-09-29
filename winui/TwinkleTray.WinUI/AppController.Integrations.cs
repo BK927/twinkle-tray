@@ -250,7 +250,7 @@ internal sealed partial class AppController
         try
         {
             var update = await _updates.CheckAsync(Settings.UpdateChannel != "stable", _lifetime.Token);
-            if (!explicitRequest && update is not null) _tray.Notify("Twinkle Tray · WinUI 3", $"Version {update.Version} is available. Open Settings → Updates to install.");
+            if (!explicitRequest && update is not null) _tray.Notify("Twinkle Tray Native", $"Version {update.Version} is available. Open Settings → Updates to install.");
             if (explicitRequest || update is not null) _settingsWindow?.ShowStatus(update is null ? $"No newer WinUI release is available. Current version: {UpdateService.CurrentVersion}." : $"WinUI {update.Version} is available.\n{update.Notes}");
         }
         catch (Exception exception) { if (explicitRequest) Report(exception); else Program.Log(exception); }

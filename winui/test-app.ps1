@@ -48,7 +48,7 @@ function Start-TestProcess {
 }
 
 function Invoke-TestCommand {
-    param([string] $Name, [string[]] $Arguments, [switch] $AllowFailure, [ValidateRange(1, 180)][int] $TimeoutSeconds = 30)
+    param([string] $Name, [string[]] $Arguments, [switch] $AllowFailure, [ValidateRange(1, 240)][int] $TimeoutSeconds = 30)
     $invocation = Start-TestProcess -Name $Name -Arguments $Arguments
     try { $null = $invocation.Process.WaitForExitAsync().WaitAsync([TimeSpan]::FromSeconds($TimeoutSeconds)).GetAwaiter().GetResult() }
     catch [TimeoutException] { throw "'$Name' did not exit within $TimeoutSeconds seconds. See $runDirectory." }
@@ -127,7 +127,7 @@ try {
 
     $smokePath = Join-Path $applicationDirectory 'smoke-test.json'
     $smokeStarted = [DateTime]::UtcNow
-    $null = Invoke-TestCommand -Name 'smoke' -Arguments @('--smoke-test') -TimeoutSeconds 180
+    $null = Invoke-TestCommand -Name 'smoke' -Arguments @('--smoke-test') -TimeoutSeconds 240
     Assert-Test (Test-Path -LiteralPath $smokePath -PathType Leaf) 'The application did not write smoke-test.json.'
     Assert-Test ((Get-Item -LiteralPath $smokePath).LastWriteTimeUtc -ge $smokeStarted) 'The smoke-test report is stale.'
     $smoke = Get-Content -Raw -LiteralPath $smokePath | ConvertFrom-Json

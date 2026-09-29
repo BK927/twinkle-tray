@@ -1,10 +1,16 @@
-# WinUI 3 port 0.2.2: source audit and validation checklist
+# Twinkle Tray Native 0.3.0: source audit and validation checklist
 
 This is a feature audit, not a claim that every monitor or Windows configuration has been tested. The reference is upstream commit [`e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e`](https://github.com/xanderfrangos/twinkle-tray/tree/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e). Electron sources are preserved alongside the native implementation.
 
+Twinkle Tray Native is maintained at [BK927/twinkle-tray-native](https://github.com/BK927/twinkle-tray-native). The supported execution target is **Windows x64**. **macOS, Apple hardware and Windows ARM64 execution are not supported in this release**, even where experimental implementation or historical build results are retained.
+
 **한국어:** 원본의 사용자 기능을 기준으로 이식 범위와 검증 범위를 구분했습니다. `Implemented`는 코드가 있다는 뜻이며 실제 장치 검증을 뜻하지 않습니다. 아래 차이점과 미검증 항목이 남아 있으므로 픽셀 단위 동일성이나 모든 하드웨어에서의 완전한 동작을 보장하는 표가 아닙니다.
 
-**Verification scope:** The **0.2.2** Windows x64 core, native GUI, UI and IPC results are recorded below. Physical-device results and the linked x64/ARM64 CI build remain explicitly identified as the **0.2.1 historical baseline**. The 0.2.2 UI run did not repeat hardware writes or change Windows DPI/high-contrast settings.
+**Verification scope:** The **local 0.3.0 Windows x64 run passed**, with fresh evidence below. The 0.2.2 UI results and 0.2.1 physical-device/CI results remain historical records. The new run did not write monitor hardware or user settings, change Windows DPI or exercise high contrast. A 0.3.0 release has not been published and a CI result for these changes is not yet recorded.
+
+## 0.3.0 tray changes
+
+The public name is Twinkle Tray Native. Its Windows 11 tray puts the toolbar below the monitor controls, brightness numbers beside sliders, and uses one slider while displays are linked. Additional controls are compact; Windows 10 style keeps its top toolbar. Twelve new native tray interaction checks passed, alongside the existing settings and popup coverage. Representative captures were visually reviewed. The original comparison used source code; an installed upstream panel was not inspected live.
 
 ## 0.2.2 UI changes
 
@@ -36,13 +42,13 @@ The audit examined these upstream entry points rather than only the README featu
 
 | User feature | Native implementation | Status / verification boundary |
 | --- | --- | --- |
-| Notification-area app, click-to-open flyout, outside-click dismissal | `TrayService`, `MainWindow` | Implemented; 11 settings pages passed 0.2.2 startup smoke. Light/dark flyout and OSD work-area bounds, real scrolling and persistent slider controls passed with 1/6/12 simulated displays. Historical 0.2.1 direct initial `--demo --settings` display also passed after the root-loaded sizing fix. Outside-click behavior is not part of the new automated layout matrix. |
+| Notification-area app, click-to-open flyout, outside-click dismissal | `TrayService`, `MainWindow` | Implemented; 11 settings pages passed 0.3.0 startup smoke. Light/dark flyout and OSD work-area bounds, real scrolling and persistent slider controls passed with 1/6/12 simulated displays. Historical 0.2.1 direct initial `--demo --settings` display also passed after the root-loaded sizing fix. Outside-click behavior is not part of the automated layout matrix. |
 | Per-display brightness, percentage, name and monitor icon | `MainWindow`, `BrightnessControl` | Implemented. Native controls preserve the original arrangement; typography, animation and spacing are WinUI behavior. |
-| Linked monitor sliders; independent levels | `AppController.TrySetAsync`, linked settings | Implemented; simulated set-all/per-monitor offset produced the expected 60/65 levels, and linked-hotkey runtime regression passed. |
+| Linked monitor sliders; independent levels | `AppController.TrySetAsync`, linked settings | Implemented; simulated set-all/per-monitor offset produced the expected 60/65 levels, and linked-hotkey runtime regression passed. The 0.3.0 UI run also verified one linked slider, numeric entry applied to all displays, and independent controls returning after unlink. |
 | Monitor name, order and hidden displays | `MonitorSettings`, monitor settings page | Implemented. Native stable IDs can differ from Electron IDs. |
 | Brightness minimum/maximum and multipoint calibration | `BrightnessCalibration` | Verified core: endpoint mapping, inverse, duplicate points, plateaus and clamping. |
 | Slider name/value visibility and glyph | `MonitorSettings`, `MainWindow` | Implemented native customization; these are additions, not claimed imports of upstream settings. |
-| Light/dark/system theme; Windows 10/11 appearance; acrylic | `MainWindow`, settings UI, `OverlayWindow` | Implemented approximation. Korean/English light/dark layout combinations passed in 0.2.2; observed heading/background colors were checked. Actual high contrast and Windows 10 remain unverified. Electron CSS and its native-animation settings are not reproduced byte-for-byte. |
+| Light/dark/system theme; Windows 10/11 appearance; acrylic | `MainWindow`, settings UI, `OverlayWindow` | Implemented approximation. Korean/English light/dark layout combinations passed again in 0.3.0; observed heading/background colors were checked. Windows 10-style top-toolbar layout passed on the Windows 11 host; an actual Windows 10 session and high contrast remain unverified. Electron CSS and its native-animation settings are not reproduced byte-for-byte. |
 | Original tray icon choices and system-theme updates | `TrayService`, original icon assets | Implemented. Windows notification area controls icon placement/visibility. |
 | Tray mouse-wheel and slider wheel controls, inversion, step size | `TrayService`, `MainWindow` | Implemented; low-level wheel-hook behavior needs an interactive desktop. |
 | Dedicated brightness OSD, timeout, safe/aggressive policy, per-profile suppression | `OverlayWindow`, automation controller | Implemented as a separate WinUI window. It is not a pixel-identical copy of the Electron OSD. Exclusive fullscreen behavior remains Windows/application-dependent. |
@@ -66,7 +72,7 @@ The audit examined these upstream entry points rather than only the README featu
 | Gamma as main control / software fallback | `GammaController`, explicit gamma routing | Implemented; separate hardware and gamma capabilities. Gamma curve and mapping tested. Live 98% gamma requests passed separately on LG ULTRAGEAR+ and AOC Q32V3WG5 under Windows 11 x64, with all 768 original ramp values restored exactly and the peer display's ramp unchanged. |
 | Extend minimum below physical backlight range | `GetExtendedLevels` / `FromExtendedLevels` | Verified core handoff between backlight and the upstream 20% gamma floor. Requires working gamma support and runtime hardware validation. |
 | Preserve/restore existing gamma calibration on shutdown, route removal or hotplug | `GammaController`, monitor-service lifecycle | Implemented; restoration avoids a changed external ramp or a reassigned display. Controlled live restoration passed on the two displays above; automatic restoration during shutdown, route removal and hotplug remains unverified on physical devices. |
-| Apple Studio Display brightness | Native HID implementation | Implemented protocol and ID matching. Needs an Apple display exposing the Windows HID interface; no driver replacement was performed. Upstream libusb/WinUSB-only configurations are not equivalent. |
+| Apple Studio Display brightness | Retained native HID implementation | Experimental protocol and ID matching are preserved, but Apple hardware is outside the supported release scope and has not been exercised. No driver replacement was performed. Upstream libusb/WinUSB-only configurations are not equivalent. |
 | Hotplug, wake, last-known brightness, per-monitor skip, refresh delay, polling | Tray power/display events, persisted `LastBrightness`, controller | Implemented, including upstream's DEL41D9 automatic-restore exclusion. Real hotplug/resume/lock/lid sequences require interactive device tests. |
 | Hide internal display while lid is closed | Lid notification and `HideClosedLid` | Implemented; requires a laptop test. |
 | Driver/provider switches and VCP read delay | `HardwareOptions`, advanced settings | WMI, DDC and Apple switches plus delay implemented. See debug-specific differences below. |
@@ -101,9 +107,9 @@ The audit examined these upstream entry points rather than only the README featu
 | Names/remaps/features/schedules/hotkeys/profiles/sensors and hardware flags | Importer | Tests cover mappings, zero brightness, legacy AM/PM/idle formats, action targets, source retention and unsupported accelerators. Model and instance aliases can map to the same native display; one source model key cannot currently fan out to multiple identical displays. |
 | Previously remembered hardware levels | `ImportKnownDisplays`, native `LastBrightness` | Verified core import of the separately selected known-displays JSON, including zero/SDR levels, unmapped references, conflicting aliases and duplicate destination records. Raw JSON is preserved. Importing settings alone does not search for or read the separate file. |
 | Native export/import/reset and pre-import backup | Advanced UI/controller | Implemented; file-picker/reset flows need interactive validation. Export includes the UDP key. |
-| Update checking, release channel, release notes | `UpdateService`, updates UI, `SemanticVersion` | Implemented against BK927 WinUI release tags. [SemVer 2.0](https://semver.org/) precedence is tested for beta progression, stable promotion, numeric identifiers and ignored build metadata. Live newer-release flow unverified. |
+| Update checking, release channel, release notes | `UpdateService`, updates UI, `SemanticVersion` | Uses the Twinkle Tray Native repository with retained `winui-v` release tags. The first 0.2.x→0.3.0 transition requires a manual install; old binaries pin legacy update paths. [SemVer 2.0](https://semver.org/) precedence is tested for beta progression, stable promotion, numeric identifiers and ignored build metadata. Live newer-release flow remains unverified. |
 | Download, checksum verification, staged installation and rollback | `UpdateService` | Implemented for portable installs. Fixture installation file replacement and forced-failure rollback passed. Release selection, download, checksum and extraction passed against a fixture HTTP handler. Live release download, parent-process shutdown and restart together remain unverified; this is not a verified atomic installer. |
-| x64/ARM64 portable distribution | Build/publish/package scripts | The 0.2.2 native GUI/UI run passed on Windows x64. Historical 0.2.1 x64 and ARM64 build jobs passed for commit `704dac7` in [GitHub Actions run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766). This is not evidence of a 0.2.2 ARM64 build or any ARM64 hardware execution. |
+| x64 release / retained ARM64 build tooling | Build/publish/package scripts | Windows x64 is the supported runtime target and the local 0.3.0 native run passed. Its release is not yet published and no fresh CI result is recorded. Historical 0.2.1 x64 and ARM64 build jobs passed for commit `704dac7` in [GitHub Actions run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766). ARM64 execution is unsupported and untested; retained tooling and past build success do not change that boundary. |
 | MSIX package and startup declaration | `package.ps1`, `StartupService` | Packaging support exists and an unsigned fixture passed package validation. Signing, trusted installation, packaged startup and deployment-channel update behavior need separate validation. This fork does not replace the upstream Microsoft Store identity. |
 | Diagnostics, settings dump and logs | Advanced settings, read-only hardware probe | Implemented. Diagnostics should be reviewed before sharing because IDs, paths or settings can identify a local configuration. |
 
@@ -113,14 +119,33 @@ The audit examined these upstream entry points rather than only the README featu
 - Fine-grained debug switches such as disabling only high-level brightness, disabling only HDR detection, forcing the old accurate/fast DDC worker, manually overriding taskbar gap/edge, disabling throttling or individual upstream event-source strategies do not all have equivalent native switches.
 - Windows monitor IDs and Electron model/instance IDs differ. Identity migration must be reviewed, especially for several displays of the same model or a display moved to a different port.
 - Native settings defaults intentionally do not auto-enable login registration, remote UDP or hardware writes merely by opening a demo or importing a file. Import does not change login registration automatically.
-- The 0.2.2 layout matrix exercises three DIP viewport sizes at an observed host scale of 1.5. Relative PNG capture scales do not exercise actual DPI switching. Safe OSD/fullscreen handling, third-party taskbar behavior, portrait displays, complete keyboard navigation, screen readers and an actual high-contrast session still require separate acceptance testing.
+- The 0.2.2 and 0.3.0 layout matrices exercise three DIP viewport sizes at an observed host scale of 1.5. Relative PNG capture scales do not exercise actual DPI switching. Safe OSD/fullscreen handling, third-party taskbar behavior, portrait displays, complete keyboard navigation, screen readers and an actual high-contrast session still require separate acceptance testing.
 - Upstream analytics, its Store identity and its release installer are not reused. The native port has its own release/update channel.
 
 ## Validation record and release gate
 
 See [VERIFICATION.md](VERIFICATION.md) for the Windows x64 0.2.1 acceptance scope, concrete hardware results and regression fixes.
 
-### 0.2.2 Windows x64 GUI, UI and IPC verification
+### Local 0.3.0 Windows x64 verification
+
+The new run passed **46 core tests, 11 settings pages, 44 runtime assertions (including 20 automation regressions), 144 layout cases, 36 interaction/popup checks and 11 IPC groups**. The UI report contains **14 preview PNGs**, no errors, zero hardware writes and zero user-settings writes.
+
+<!-- 0.3.0 RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
+The complete run finished at **2026-09-29 09:31:42 UTC**. `artifacts/test-results/20260929T092859437-f5d0177dedf34b74bdce2455a08d9499/{smoke-test,ui-layout-test,integration-test}.json` each records `Passed: true`.
+
+- [x] The complete settings matrix and state-preservation checks passed again after branding changes.
+- [x] Tray numeric input changes only its selected monitor, restores invalid input, clamps both limits and retains drafts/selection during background refresh.
+- [x] Refresh temporarily disables writes and restores controls; linked numeric editing applies through one slider, and unlink restores individual controls.
+- [x] Compact-feature numeric input writes only its VCP control; refresh blocks a pending input-source selection event.
+- [x] Windows 11 bottom-toolbar and Windows 10-style top-toolbar geometry; representative new captures visually reviewed.
+- [x] Interactive simulated-panel wheel changes, Enter to apply one monitor's numeric value, and F5 value preservation. These were demo checks with no real hardware writes.
+- [ ] Live comparison with an installed upstream panel. Source comparison was completed, without claiming pixel-for-pixel identity.
+- [ ] Native multi-DPI sessions and actual high contrast. All preview host scales were 1.5; relative capture percentages do not replace these tests.
+- [ ] Published 0.3.0 release and a completed fresh CI result. Local success alone establishes neither.
+
+See [UI-POLISH.md](UI-POLISH.md) for the new twelve-case tray coverage and the unchanged environment limits.
+
+### Historical 0.2.2 Windows x64 GUI, UI and IPC verification
 
 **46/46 core tests passed again.** The native smoke report passed all **11 settings pages and 41 runtime assertions**, including the existing 20 automation regressions. The separate UI report passed **144 arranged-layout cases and 24 interaction/popup checks**, and generated **11 preview PNGs**. The final integration report passed **11 IPC test groups**. Hardware writes and user-settings writes were both zero in the isolated UI fixtures.
 
@@ -162,6 +187,6 @@ Historical 0.2.1 acceptance record (checked items are not 0.2.2 results):
 - [x] Portable update file-copy and failure rollback against temporary fixture installations.
 - [ ] Full live release download/update process, plus signed MSIX install/startup/uninstall on a test installation.
 
-The 0.2.2 results above are separate from this historical baseline. Device-specific and deployment gaps remain open even when the native layout and interaction checks pass.
+The 0.3.0 local results and 0.2.2 results above are separate from this historical hardware baseline. Device-specific and deployment gaps remain open even when the native layout and interaction checks pass.
 
 Unchecked means unverified, not necessarily unimplemented. Keep this document synchronized with the actual release evidence and retain unsupported details in the import report.

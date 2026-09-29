@@ -2,7 +2,7 @@
     x:Class="TwinkleTray.WinUI.SettingsWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Twinkle Tray Settings">
+    Title="Twinkle Tray Native Settings">
     <Grid x:Name="Root">
         <Grid.RowDefinitions>
             <RowDefinition Height="40" />
@@ -13,7 +13,7 @@
         <Grid x:Name="TitleBar" Background="Transparent">
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,0,0" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE706;" FontSize="16" />
-                <TextBlock x:Name="WindowTitle" Text="Twinkle Tray" FontSize="12" />
+                <TextBlock x:Name="WindowTitle" Text="Twinkle Tray Native" FontSize="12" />
             </StackPanel>
         </Grid>
         <NavigationView x:Name="Navigation" Grid.Row="1"

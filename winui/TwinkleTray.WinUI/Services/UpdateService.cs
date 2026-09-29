@@ -15,7 +15,7 @@ internal sealed class UpdateService : IDisposable
 {
     private readonly HttpClient _http;
     private readonly string _downloadRoot;
-    internal static string CurrentVersion => (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.2").Split('+')[0];
+    internal static string CurrentVersion => (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.3.0").Split('+')[0];
     public AvailableUpdate? Available { get; private set; }
 
     public UpdateService() : this(new HttpClient { Timeout = TimeSpan.FromMinutes(10) },
@@ -25,12 +25,12 @@ internal sealed class UpdateService : IDisposable
     {
         _http = http;
         _downloadRoot = Path.GetFullPath(downloadRoot);
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("TwinkleTray-WinUI/" + CurrentVersion);
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("TwinkleTray-Native/" + CurrentVersion);
     }
 
     public async Task<AvailableUpdate?> CheckAsync(bool includePrerelease, CancellationToken cancellationToken)
     {
-        using var response = await _http.GetAsync("https://api.github.com/repos/BK927/twinkle-tray/releases?per_page=30", cancellationToken);
+        using var response = await _http.GetAsync("https://api.github.com/repos/BK927/twinkle-tray-native/releases?per_page=30", cancellationToken);
         response.EnsureSuccessStatusCode();
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
         string architecture = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "ARM64" : "x64";
@@ -43,21 +43,33 @@ internal sealed class UpdateService : IDisposable
             string version = tag[7..];
             if (!SemanticVersion.TryCompare(version, CurrentVersion, out var newer) || newer <= 0) continue;
             var assets = release.GetProperty("assets").EnumerateArray().ToArray();
-            string name = $"TwinkleTray-WinUI3-{version}-{architecture}.zip";
+            // Prefer the current public name while accepting assets retained from releases before the rename.
+            string name = $"TwinkleTray-Native-{version}-{architecture}.zip";
             var archive = assets.FirstOrDefault(x => x.GetProperty("name").GetString() == name);
+            if (archive.ValueKind == JsonValueKind.Undefined)
+            {
+                name = $"TwinkleTray-WinUI3-{version}-{architecture}.zip";
+                archive = assets.FirstOrDefault(x => x.GetProperty("name").GetString() == name);
+            }
             var sums = assets.FirstOrDefault(x => x.GetProperty("name").GetString() == "SHA256SUMS.txt");
             if (archive.ValueKind == JsonValueKind.Undefined || sums.ValueKind == JsonValueKind.Undefined) continue;
             if (Available is not null && SemanticVersion.Compare(version, Available.Version) <= 0) continue;
             Available = new AvailableUpdate(version, release.GetProperty("body").GetString() ?? "", new Uri(release.GetProperty("html_url").GetString()!),
-                AssetUri(archive), AssetUri(sums), name);
+                AssetUri(archive, tag), AssetUri(sums, tag), name);
         }
         return Available;
     }
 
-    private static Uri AssetUri(JsonElement asset)
+    private static Uri AssetUri(JsonElement asset, string tag)
     {
         var uri = new Uri(asset.GetProperty("browser_download_url").GetString()!);
-        if (uri.Scheme != "https" || uri.Host != "github.com" || !uri.AbsolutePath.StartsWith("/BK927/twinkle-tray/releases/download/", StringComparison.Ordinal))
+        string name = asset.GetProperty("name").GetString()!;
+        string path = uri.GetComponents(UriComponents.Path, UriFormat.Unescaped);
+        string suffix = $"/releases/download/{tag}/{name}";
+        bool trustedPath = path.Equals("BK927/twinkle-tray-native" + suffix, StringComparison.Ordinal) ||
+            path.Equals("BK927/twinkle-tray" + suffix, StringComparison.Ordinal);
+        if (uri.Scheme != "https" || uri.Host != "github.com" || !uri.IsDefaultPort || uri.UserInfo.Length != 0 ||
+            uri.Query.Length != 0 || uri.Fragment.Length != 0 || !trustedPath)
             throw new InvalidDataException("Unexpected update asset location.");
         return uri;
     }
@@ -87,7 +99,7 @@ internal sealed class UpdateService : IDisposable
         string staging = Path.Combine(root, "app");
         ZipFile.ExtractToDirectory(archive, staging);
         if (!File.Exists(Path.Combine(staging, "TwinkleTray.WinUI.exe")) || !File.Exists(Path.Combine(staging, "TwinkleTray.WinUI.deps.json")))
-            throw new InvalidDataException("The update does not contain a complete WinUI application.");
+            throw new InvalidDataException("The update does not contain a complete Twinkle Tray Native application.");
         return staging;
     }
 
@@ -105,11 +117,11 @@ internal sealed class UpdateService : IDisposable
         string target = Path.GetFullPath(arguments[2]).TrimEnd(Path.DirectorySeparatorChar);
         if (target == source || target == Path.GetPathRoot(target)?.TrimEnd(Path.DirectorySeparatorChar) ||
             !File.Exists(Path.Combine(target, "TwinkleTray.WinUI.exe")) || !File.Exists(Path.Combine(target, "TwinkleTray.WinUI.deps.json")))
-            throw new InvalidOperationException("The update destination is not an existing Twinkle Tray installation.");
+            throw new InvalidOperationException("The update destination is not an existing Twinkle Tray Native installation.");
         try
         {
             using var parent = Process.GetProcessById(parentId);
-            if (!parent.WaitForExit(30000)) throw new TimeoutException("Twinkle Tray did not close for the update.");
+            if (!parent.WaitForExit(30000)) throw new TimeoutException("Twinkle Tray Native did not close for the update.");
         }
         catch (ArgumentException) { /* The parent already exited. */ }
         string backup = Path.Combine(Directory.GetParent(source)!.FullName, "backup");

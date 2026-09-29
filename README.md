@@ -1,145 +1,64 @@
-> **WinUI 3 fork · 0.2.2** — The `winui3` branch ports Twinkle Tray's user features to native C#/WinUI 3 while retaining the original Electron source. 기능, 실행 방법은 [WinUI 3 안내](winui/README.md), 원본과의 차이점 및 실제 장치 검증 범위는 [이식 체크리스트](winui/PORT-CHECKLIST.md)를 확인하세요. Device-specific validation and documented compatibility differences remain. The original upstream README follows below.
+# Twinkle Tray Native
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/xanderfrangos/twinkle-tray/master/src/assets/logo.png" width="128px" height="128px" alt="Twinkle Tray brightness slider logo">
-</p>
-<h1 align="center">Twinkle Tray</h1>
+A native Windows brightness controller built with C# and WinUI 3, based on [Twinkle Tray](https://github.com/xanderfrangos/twinkle-tray) by Xander Frangos and contributors.
 
-<p align="center"><a href="https://github.com/xanderfrangos/twinkle-tray/releases" target="_blank"><img src="https://img.shields.io/github/v/release/xanderfrangos/twinkle-tray" alt="Latest release" /></a> <a href="https://github.com/xanderfrangos/twinkle-tray/releases" target="_blank"><img src="https://img.shields.io/github/downloads/xanderfrangos/twinkle-tray/total" alt="Total downloads" /></a> <a href="https://hosted.weblate.org/projects/twinkle-tray/twinkle-tray/" target="_blank"><img src="https://hosted.weblate.org/widgets/twinkle-tray/-/twinkle-tray/svg-badge.svg" alt="Translations" /></a></p>
+Twinkle Tray Native keeps the familiar tray workflow and monitor controls while running without Electron. This is an independent community fork maintained by BK927, with its own releases and updates.
 
-Twinkle Tray enables brightness control on external displays in Windows 10 & 11. Even though Windows is capable of adjusting the backlight on most monitors, it doesn't support external monitors natively. Windows also lacks any options to manage the brightness of multiple displays. This app inserts a new icon into your system tray, where you can click to have instant access to the brightness levels of all compatible displays. 
+**[Build and run](#build)** · [Release channel](https://github.com/BK927/twinkle-tray-native/releases) · [한국어 사용 안내](winui/README.md) · [Features and compatibility](winui/PORT-CHECKLIST.md) · [Report an issue](https://github.com/BK927/twinkle-tray-native/issues)
 
-<img src="https://raw.githubusercontent.com/xanderfrangos/twinkle-tray/gh-pages/assets/img/tt-screenshot-w11.jpg" alt="Win 10 brightness slider" />
+## Platform support
+
+- **Windows x64**: Windows 10 version 2004 (build 19041) or later, and Windows 11. Physical-device validation so far used Windows 11 x64 and two external monitors.
+- **Not supported in this release**: macOS, Apple hardware and Windows ARM64 execution. Retained Apple/ARM64 implementation or historical build results do not establish supported runtime behavior.
+- Available brightness, contrast and HDR controls depend on the display and connection. See the [support boundaries](winui/PORT-CHECKLIST.md) before relying on a particular hardware feature.
 
 ## Features
-- Adds brightness sliders to the system tray, similar to the built-in Windows volume flyout.
-- Seamlessly blends in with Windows 10 and Windows 11. Uses your Personalization settings to match your taskbar.
-- Can automatically change monitor brightness depending on the time of day or when idle.
-- Bind hotkeys to adjust the brightness of specific or all displays.
-- Normalize backlight across different monitors.
-- Control DDC/CI features such as contrast.
-- Starts up with Windows.
 
-### Design & Personalization
+- Tray brightness sliders with linked or independent monitor levels, mouse-wheel control, names, ordering and visibility.
+- DDC/CI and WMI brightness, contrast and custom monitor features; HDR SDR-white-level control, gamma dimming and calibration where supported.
+- Time and solar-event schedules, app profiles, multi-action hotkeys, idle dimming and ambient-light integration.
+- Native settings, a separate brightness overlay, light/dark themes and responsive layouts.
+- Original Twinkle Tray settings import, command-line and authenticated UDP control, portable updates and diagnostic tools.
 
-Twinkle Tray will automatically adjust the look and feel to match your Windows version and preferences. Additional options are available to select the Windows version and theme of your choice.
+The [port checklist](winui/PORT-CHECKLIST.md) distinguishes implemented features from actual device tests. The original Electron source is retained in this repository.
 
-<img src="https://raw.githubusercontent.com/xanderfrangos/twinkle-tray/gh-pages/assets/img/tt-comparison.jpg" alt="Win 11 brightness slider" />
+## Try 0.3.0
 
-## Download
+**A packaged 0.3.0 release has not been published yet.** Build the x64 application from source using the steps below. Once a release is published, its portable ZIP will be available from this project's [release channel](https://github.com/BK927/twinkle-tray-native/releases). Keep the complete output folder, including DLLs, `Assets` and `Localization`, together and run `TwinkleTray.WinUI.exe`; the executable keeps its existing filename for compatibility.
 
-**Download the lastest version from [twinkletray.com](https://twinkletray.com/) or the [Releases page](https://github.com/xanderfrangos/twinkle-tray/releases).**
-
-<a href="https://www.microsoft.com/store/productId/9PLJWWSV01LK" target="_blank"><img width="156" src="https://crushee.app/assets/img/ms-store.svg" alt="Get Twinkle Tray brightness slider from the Microsoft Store"></a>
-
-## Install via Package Manager
-
-### Windows Package Manager
+To try the interface without changing real monitor brightness:
 
 ```powershell
-winget install xanderfrangos.twinkletray
+.\TwinkleTray.WinUI.exe --demo
+.\TwinkleTray.WinUI.exe --demo --settings
 ```
 
-### Chocolatey (unofficial)
+The current development version is **0.3.0**. When moving from the earlier 0.2.x “Twinkle Tray · WinUI 3” builds, close the old app and install the new build manually once. Existing settings remain at `%APPDATA%\TwinkleTray.WinUI\settings.json`; there is no need to move or rename them. Automatic updating across the repository rename is not guaranteed for old binaries. [Packaging and upgrades](winui/PACKAGING.md) explains the preserved compatibility identifiers.
 
-[Chocolatey](https://chocolatey.org/) users can download and install Twinkle Tray from Chocolatey's Community Repository by installing the `twinkle-tray` package:
+## Build
+
+Install the .NET 10 SDK on Windows, then run from the repository root:
 
 ```powershell
-choco install twinkle-tray
+.\winui\build.ps1 -Architecture x64
 ```
 
-To upgrade to the latest approved package version, run the following command:
+The self-contained application is published to `winui/artifacts/win-x64/`. Node.js and Electron are not needed for this native build. Detailed CLI, import, packaging and verification instructions are in [winui/README.md](winui/README.md).
 
-```powershell
-choco upgrade twinkle-tray
-```
+## Verification
 
-**This package is not maintained at this repository**. Please do not create issues relating to the package here. Instead, go to the [package page](https://community.chocolatey.org/packages/twinkle-tray) and follow the [Package Triage Process](https://docs.chocolatey.org/en-us/community-repository/users/package-triage-process).
+The **local 0.3.0 Windows x64 run** passed 46 core tests, 11 settings pages, 44 simulated runtime assertions (including 20 automation regressions), 144 layout cases, 36 interaction/popup checks and 11 IPC groups. Fourteen preview images were generated; UI fixtures made no hardware or user-settings writes. Representative images were visually reviewed for the Windows 11 bottom toolbar, numbers beside sliders, one linked slider and compact extra controls.
 
-### Scoop (unofficial)
+The original panel was compared against its source; an installed upstream panel was not inspected live. Actual high-contrast and separate Windows DPI sessions remain untested. This is local verification, not a published release or a completed CI result for these changes. [UI verification](winui/UI-POLISH.md) records the fresh evidence and limits; [physical-device results](winui/VERIFICATION.md) preserve the separate 0.2.1 tests.
 
-[Scoop](https://scoop.sh/) users can download and install Twinkle Tray from Scoop's Extras bucket by installing the `twinkle-tray` package:
+## 한국어
 
-```sh
-scoop bucket add extras
-scoop install extras/twinkle-tray
-```
+**Twinkle Tray Native**는 원본 Twinkle Tray의 트레이 사용 방식과 모니터 설정을 유지하면서 C#과 WinUI 3로 옮긴 Windows x64용 커뮤니티 포크입니다. **0.3.0 배포본은 아직 게시되지 않았습니다.** 현재는 위 빌드 방법으로 x64 앱을 만든 뒤 `TwinkleTray.WinUI.exe`를 실행할 수 있으며, 배포본이 게시되면 이 저장소의 릴리스 페이지에서 제공됩니다. macOS·Apple 하드웨어·ARM64 실행은 현재 지원 범위에 포함하지 않습니다.
 
-To upgrade to the latest approved package version, run the following command:
+0.2.x에서 처음 전환할 때는 기존 앱을 종료하고 새 빌드를 수동으로 설치하세요. 기존 설정 경로와 파일 형식은 유지합니다. 사용법과 검증 범위는 [한국어 안내](winui/README.md)에 정리했습니다.
 
-```sh
-scoop update twinkle-tray
-```
+## Original project and license
 
-**This package is not maintained at this repository**. Please do not create issues relating to the package here. Instead, go to [ScoopInstallers/Extras](https://github.com/ScoopInstaller/Extras) and search for an existing [issue](https://github.com/ScoopInstaller/Extras/issues?q=is%3Aissue+twinkle-tray) or [discussion](https://github.com/ScoopInstaller/Extras/discussions?discussions_q=twinkle-tray) and create a new [issue](https://github.com/ScoopInstaller/Extras/issues/new/choose) or [discussion](https://github.com/ScoopInstaller/Extras/discussions/new/choose) if one does not already exist.
+Twinkle Tray was created by **Xander Frangos and contributors**. This fork preserves the original source, assets, translations, copyright notices and [MIT license](LICENSE). The untouched original README is kept in [docs/README.upstream.md](docs/README.upstream.md); its downloads and installation instructions refer to the original Electron application.
 
-## Usage
-
-- Download from the [Releases page](https://github.com/xanderfrangos/twinkle-tray/releases) and run the installer EXE.
-- Once installation has finished, you should see the Twinkle Tray icon in your system tray. 
-- Click the icon to bring up the Adjust Brightness flyout. 
-- Click away to hide the flyout.
-- Right-click the system tray icon to quit.
-
-## Compatibility
-Twinkle Tray uses DDC/CI and WMI to communicate with your monitors. Most monitors offer DDC/CI compatibility, but it may be off by default. Make sure you have the appropriate option(s) enabled on your monitor so that it can work with Twinkle Tray. Refer to your monitor's user manual for more information.
-
-**Known issues:**
-- The AMD Radeon Control Panel can interfere with Twinkle Tray. Ensure "Custom Colors" is not enabled.
-- VGA/DVI may not be compatible.
-- USB/Thunderbolt/Surface docks with HDMI or DisplayPort may not be compatible. 
-- DDC/CI features such as brightness control and power state may cause certain models of monitors to behave poorly. This applies to any DDC/CI software, not just Twinkle Tray.
-
-If some of your monitors are not being detected, please see [this page](https://github.com/xanderfrangos/twinkle-tray/wiki/Display-Detection-&-Support-Issues) for troubleshooting steps.
-
-## Command Line Arguments
-
-Twinkle Tray (v1.13.0+) supports requesting brightness changes from the command line. Twinkle Tray must already be running. One monitor argument and one brightness argument are required. Multiple arguments will override each other.
-
-For example: `"%LocalAppData%\Programs\twinkle-tray\Twinkle Tray.exe" --MonitorNum=1 --Offset=-30` will adjust monitor number 1 by -30 brightness.
-
-### Supported args:
-
-- `--List` List all displays. *(available in v1.14.0+)*
-- `--MonitorNum` Select monitor by number. Starts at 1. *Example: `--MonitorNum=2`*
-- `--MonitorID` Select monitor by internal ID. Partial or whole matches accepted. *Example: `--MonitorID="UID2353"`*
-- `--All` Flag to select all monitors.
-- `--Set` Set brightness percentage. *Example: `--Set=95`*
-- `--Offset` Adjust brightness percentage. *Example: `--Offset=-20`*
-- `--VCP` Send a specific DDC/CI VCP code and value instead of brightness. The first part is the VCP code (decimal or hexadecimal), and the second is the value. *Example: `--VCP="0xD6:5"`* *(available in v1.14.4+)*
-- `--Overlay` Flag to show new brightness levels in the overlay *Example: `--Overlay`*
-- `--Panel` Flag to show new brightness levels in the panel *Example: `--Panel`*
-
-*If you are using the Microsoft Store version of Twinkle Tray, you can access Twinkle Tray using the alias `Twinkle-Tray.exe` (v1.17.1+).*
-
-## Localization
-Thanks to [several contributors](https://github.com/xanderfrangos/twinkle-tray/graphs/contributors), Twinkle Tray is localized for multiple languages. If you'd like to create or update a localization, see [this page](https://github.com/xanderfrangos/twinkle-tray/wiki/Localization-files) for details. Special thanks to [Weblate](https://weblate.org/) for allowing free use of their service.
-
-#### Localization progress
-<a href="https://hosted.weblate.org/engage/twinkle-tray/?utm_source=widget">
-<img src="https://hosted.weblate.org/widgets/twinkle-tray/-/multi-auto.svg" alt="Translation status" />
-</a>
-
-## Build Instructions
-If you wish to run a development build of Twinkly Tray:
-
-- Download or clone.
-- Install the build tools for [`node-gyp`](https://github.com/nodejs/node-gyp#installation), if not already installed. You may already have these from installing NodeJS.
-- Run `npm install`.
-- Run `npm run build` to build an executable or `npm start` to run a development build.
-
-*Note: Twinkle Tray must be built on Windows.*
-
-## Special Thanks
-
-Twinkle Tray was built using frameworks & libraries such as [Electron](https://electronjs.org/), [Node.js](https://nodejs.org/), [node-ddcci](https://github.com/hensm/node-ddcci), and [win32-displayconfig](<https://github.com/djsweet/win32-displayconfig>). Thanks to Weblate for allowing free use of their service, along with the many contributors to the localizations of Twinkle Tray. The app would not be nearly as popular without all of your help. And thank you for the many donations, small and large, over the years. 
-
-## License
-
-Copyright © 2020 Xander Frangos
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+The upstream reference is [`e3d5bb0`](https://github.com/xanderfrangos/twinkle-tray/commit/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e). Additional SunCalc attribution is retained in [ThirdPartyNotices.txt](winui/TwinkleTray.Core/ThirdPartyNotices.txt). Changes for this native fork are maintained in `winui/`.

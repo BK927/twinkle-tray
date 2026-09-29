@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Windowing;
 using System.Text.Json;
 using TwinkleTray.Core;
@@ -77,6 +78,7 @@ internal sealed partial class AppController
                     }
                     UiVisualVerification.RecordProgress(previews, $"Popup checks complete: {theme}, {count} displays", result);
                 }
+            await VerifyTrayEditingAsync(result, previews);
         }
         catch (Exception exception) { result.Errors.Add(exception.ToString()); }
         finally
@@ -98,6 +100,108 @@ internal sealed partial class AppController
         }
         if (!result.Passed) throw new InvalidOperationException($"UI layout verification failed. Inspect ui-layout-test.json ({result.Cases.Count} cases, {result.Errors.Count} harness errors).");
         return result.Cases.Count;
+    }
+
+    private async Task VerifyTrayEditingAsync(UiVerificationResult result, string previews)
+    {
+        Settings = new AppSettings { Language = "ko", Theme = "dark", WindowsStyle = "win11", UseAcrylic = false, UpdateIntervalMilliseconds = 90 };
+        _monitors = SettingsWindow.UiFixtureMonitors(2).Select((m, index) => m with { Name = index == 0 ? "LG ULTRAGEAR+" : "Q32V3WG5", Brightness = index == 0 ? 65 : 45 }).ToArray();
+        _features.Clear();
+        var root = (FrameworkElement)_window.Content;
+        if (root.FindName("ErrorBar") is InfoBar error) error.IsOpen = false;
+        _window.ApplySettings(); _window.ShowPanel();
+        await UiVisualVerification.SettleAsync(root);
+        T Element<T>(string id) where T : FrameworkElement => UiVisualVerification.AuthoredElements(root).OfType<T>()
+            .Single(element => AutomationProperties.GetAutomationId(element) == id);
+        var focusTarget = (Button)root.FindName("SettingsButton");
+        var header = (FrameworkElement)root.FindName("PanelHeader");
+        var body = (FrameworkElement)root.FindName("BodyScroll");
+        Rect Bounds(FrameworkElement element) => element.TransformToVisual(root).TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+        var headerBounds = Bounds(header); var bodyBounds = Bounds(body);
+        result.Checks.Add(new("Windows 11 tray keeps monitor controls above its toolbar", headerBounds.Top >= bodyBounds.Bottom - 1,
+            $"Body bottom={bodyBounds.Bottom:0.##}; toolbar top={headerBounds.Top:0.##}"));
+        var firstSlider = Element<Slider>("brightness:ui-fixture:0");
+        var firstEditor = Element<TextBox>("brightness:ui-fixture:0:value");
+        var sliderBounds = Bounds(firstSlider); var editorBounds = Bounds(firstEditor);
+        result.Checks.Add(new("Tray numeric brightness is beside its slider", editorBounds.Left >= sliderBounds.Right - 1 && Math.Abs((editorBounds.Top + editorBounds.Height / 2) - (sliderBounds.Top + sliderBounds.Height / 2)) < 8,
+            $"Slider={sliderBounds}; numeric input={editorBounds}"));
+        result.Previews.Add(await UiVisualVerification.CaptureAsync(root, previews, "tray-native-two-displays", 1));
+
+        async Task<bool> EditAsync(string id, string text)
+        {
+            var editor = Element<TextBox>(id);
+            bool focused = editor.Focus(FocusState.Programmatic);
+            await UiVisualVerification.SettleAsync(root);
+            editor.Text = text;
+            focusTarget.Focus(FocusState.Programmatic);
+            await UiVisualVerification.SettleAsync(root);
+            await _window.FlushForVerificationAsync();
+            await UiVisualVerification.SettleAsync(root);
+            return focused;
+        }
+        bool editFocused = await EditAsync("brightness:ui-fixture:0:value", "73");
+        bool oneChanged = Math.Abs(LogicalBrightness(_monitors[0]) - 73) < .01 && Math.Abs(LogicalBrightness(_monitors[1]) - 45) < .01;
+        result.Checks.Add(new("Direct numeric entry updates only the selected monitor", editFocused && oneChanged,
+            $"Focused={editFocused}; logical brightness={LogicalBrightness(_monitors[0])}/{LogicalBrightness(_monitors[1])}"));
+        editFocused = await EditAsync("brightness:ui-fixture:0:value", "not a number");
+        bool invalidKept = Math.Abs(LogicalBrightness(_monitors[0]) - 73) < .01 && Element<TextBox>("brightness:ui-fixture:0:value").Text == "73";
+        result.Checks.Add(new("Invalid tray numeric input restores the previous value", editFocused && invalidKept,
+            $"Logical brightness={LogicalBrightness(_monitors[0])}; restored input={Element<TextBox>("brightness:ui-fixture:0:value").Text}"));
+        bool upperFocused = await EditAsync("brightness:ui-fixture:0:value", "125");
+        bool upperClamped = Math.Abs(LogicalBrightness(_monitors[0]) - 100) < .01;
+        bool lowerFocused = await EditAsync("brightness:ui-fixture:0:value", "-10");
+        result.Checks.Add(new("Tray numeric input clamps both brightness limits", upperFocused && lowerFocused && upperClamped && Math.Abs(LogicalBrightness(_monitors[0])) < .01,
+            $"Upper clamp={upperClamped}; lower result={LogicalBrightness(_monitors[0])}"));
+
+        firstEditor = Element<TextBox>("brightness:ui-fixture:0:value");
+        bool draftFocused = firstEditor.Focus(FocusState.Programmatic);
+        firstEditor.Text = "42"; firstEditor.Select(0, 1);
+        _window.RenderMonitors(); await UiVisualVerification.SettleAsync(root);
+        result.Checks.Add(new("Tray background refresh preserves numeric draft and selection", draftFocused && ReferenceEquals(firstEditor, Element<TextBox>("brightness:ui-fixture:0:value")) && firstEditor.Text == "42" && firstEditor.SelectionStart == 0 && firstEditor.SelectionLength == 1,
+            $"Text={firstEditor.Text}; selection={firstEditor.SelectionStart}/{firstEditor.SelectionLength}"));
+        // Blur and drain before changing the control tree, just as a user would.
+        focusTarget.Focus(FocusState.Programmatic); await UiVisualVerification.SettleAsync(root); await _window.FlushForVerificationAsync();
+        _window.SetRefreshing(true); await UiVisualVerification.SettleAsync(root);
+        var refreshingControls = UiVisualVerification.AuthoredElements(root).Where(element => element is Slider or TextBox).Cast<Control>().ToArray();
+        bool disabled = refreshingControls.Length > 0 && refreshingControls.All(control => !control.IsEnabled);
+        _window.SetRefreshing(false); await UiVisualVerification.SettleAsync(root);
+        bool restored = UiVisualVerification.AuthoredElements(root).OfType<Slider>().All(slider => slider.IsEnabled);
+        result.Checks.Add(new("Tray refresh disables writes then restores controls", disabled && restored,
+            $"Disabled during refresh={disabled}; sliders restored={restored}"));
+
+        Settings.LinkedBrightness = true; _window.ApplySettings(); await UiVisualVerification.SettleAsync(root);
+        int linkedSliders = UiVisualVerification.AuthoredElements(root).OfType<Slider>().Count();
+        bool linkedFocused = await EditAsync("brightness:all:value", "58");
+        bool allChanged = _monitors.All(monitor => Math.Abs(LogicalBrightness(monitor) - 58) < .01);
+        result.Checks.Add(new("Linked tray uses one slider and applies numeric entry to every display", linkedSliders == 1 && linkedFocused && allChanged,
+            $"Sliders={linkedSliders}; all logical levels 58={allChanged}"));
+        result.Previews.Add(await UiVisualVerification.CaptureAsync(root, previews, "tray-native-linked", 1));
+        Settings.LinkedBrightness = false; _window.ApplySettings(); await UiVisualVerification.SettleAsync(root);
+        result.Checks.Add(new("Unlinking restores individual tray controls", UiVisualVerification.AuthoredElements(root).OfType<Slider>().Count() == 2,
+            $"Sliders after unlink={UiVisualVerification.AuthoredElements(root).OfType<Slider>().Count()}"));
+
+        Settings.WindowsStyle = "win10"; _window.ApplySettings(); await UiVisualVerification.SettleAsync(root);
+        headerBounds = Bounds(header); bodyBounds = Bounds(body);
+        result.Checks.Add(new("Windows 10 tray retains its top toolbar", headerBounds.Bottom <= bodyBounds.Top + 1,
+            $"Toolbar bottom={headerBounds.Bottom:0.##}; body top={bodyBounds.Top:0.##}"));
+        result.Previews.Add(await UiVisualVerification.CaptureAsync(root, previews, "tray-native-win10", 1));
+
+        var preferences = new MonitorSettings { Name = _monitors[0].Name };
+        Settings.Monitors[_monitors[0].Id] = preferences;
+        preferences.Features[0x62] = new() { Enabled = true, Name = "Speaker volume" };
+        preferences.Features[0x60] = new() { Enabled = true, Name = "Input source" };
+        _features[_monitors[0].Id] = [new VcpFeature(0x62, "Volume", 50, 100, []), new VcpFeature(0x60, "Input source", 17, 18, [15, 17, 18])];
+        _window.ApplySettings(); await UiVisualVerification.SettleAsync(root);
+        bool volumeFocused = await EditAsync("feature:ui-fixture:0:98:value", "37");
+        result.Checks.Add(new("Compact feature numeric entry updates only its VCP control", volumeFocused && Features(_monitors[0].Id).Single(feature => feature.Code == 0x62).Current == 37 && _monitors.All(monitor => Math.Abs(LogicalBrightness(monitor) - 58) < .01),
+            $"Volume={Features(_monitors[0].Id).Single(feature => feature.Code == 0x62).Current}; brightness={LogicalBrightness(_monitors[0])}/{LogicalBrightness(_monitors[1])}"));
+        var choice = Element<ComboBox>("feature:ui-fixture:0:96");
+        _window.SetRefreshing(true);
+        choice.SelectedIndex = 0; await UiVisualVerification.SettleAsync(root);
+        bool refreshChoiceBlocked = !choice.IsEnabled && Features(_monitors[0].Id).Single(feature => feature.Code == 0x60).Current == 17;
+        _window.SetRefreshing(false); _window.RenderMonitors(); await UiVisualVerification.SettleAsync(root);
+        result.Checks.Add(new("Refresh blocks a pending input-source selection event", refreshChoiceBlocked && choice.IsEnabled && choice.SelectedItem is ComboBoxItem item && (uint)item.Tag == 17,
+            $"Blocked while refreshing={refreshChoiceBlocked}; restored input={Features(_monitors[0].Id).Single(feature => feature.Code == 0x60).Current}"));
     }
 
     private static async Task<UiCheck> VerifyObservedPopupAsync(Window window, string scrollName, int expectedWidth, int expectedHeight, bool expectedToFit)

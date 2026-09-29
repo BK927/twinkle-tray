@@ -10,7 +10,7 @@ internal static class UdpCommandClient
     public static async Task<string> RunAsync(CommandLineOptions options)
     {
         var settings = new SettingsStore().Load();
-        if (!settings.UdpEnabled) throw new InvalidOperationException("Enable UDP in Advanced settings and start Twinkle Tray before using --UDP.");
+        if (!settings.UdpEnabled) throw new InvalidOperationException("Enable UDP in Advanced settings and start Twinkle Tray Native before using --UDP.");
         foreach (int port in new[] { settings.UdpPort, settings.UdpPort + 13137, settings.UdpPort + 1603 }.Where(p => p <= 65535))
         {
             using var socket = new UdpClient(); socket.Connect(IPAddress.Loopback, port);
@@ -42,6 +42,6 @@ internal static class UdpCommandClient
             catch (TimeoutException) { }
             catch (SocketException) { }
         }
-        throw new TimeoutException("No authenticated Twinkle Tray UDP server answered on the configured ports.");
+        throw new TimeoutException("No authenticated Twinkle Tray Native UDP server answered on the configured ports.");
     }
 }

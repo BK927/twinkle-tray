@@ -5,6 +5,7 @@ on:
     paths-ignore:
       - 'winui/**'
       - 'README.md'
+      - 'docs/README.upstream.md'
       - '.gitignore'
       - '.github/workflows/winui.yml'
       - '.github/workflows/winui-release.yml'
@@ -13,6 +14,7 @@ on:
     paths-ignore:
       - 'winui/**'
       - 'README.md'
+      - 'docs/README.upstream.md'
       - '.gitignore'
       - '.github/workflows/winui.yml'
       - '.github/workflows/winui-release.yml'

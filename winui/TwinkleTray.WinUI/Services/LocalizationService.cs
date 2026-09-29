@@ -6,6 +6,7 @@ namespace TwinkleTray.WinUI.Services;
 /// <summary>Reuses the upstream translation files with English and caller-provided fallbacks.</summary>
 public static class LocalizationService
 {
+    public const string ProductName = "Twinkle Tray Native";
     private static readonly Dictionary<string, string> English = Load("en");
     private static Dictionary<string, string> _translations = English;
     public static string CurrentLanguage { get; private set; } = "en";
@@ -29,12 +30,31 @@ public static class LocalizationService
 
     public static string Get(string key, string fallback)
     {
+        string value;
         if (_translations.TryGetValue(key, out var translated) && !string.IsNullOrWhiteSpace(translated))
-            return translated;
-        if (CurrentLanguage.StartsWith("ko", StringComparison.OrdinalIgnoreCase) && Korean.TryGetValue(key, out translated))
-            return translated;
-        return English.TryGetValue(key, out var english) && !string.IsNullOrWhiteSpace(english) ? english : fallback;
+            value = translated;
+        else if (CurrentLanguage.StartsWith("ko", StringComparison.OrdinalIgnoreCase) && Korean.TryGetValue(key, out translated))
+            value = translated;
+        else value = English.TryGetValue(key, out var english) && !string.IsNullOrWhiteSpace(english) ? english : fallback;
+
+        // Only current-app labels are branded. Attribution and upstream import text
+        // retain the original project's name, and the upstream JSON stays untouched.
+        if (!ProductLabelKeys.Contains(key) || value.Contains(ProductName, StringComparison.Ordinal)) return value;
+        foreach (var name in UpstreamProductNames) value = value.Replace(name, ProductName, StringComparison.Ordinal);
+        return value;
     }
+
+    private static readonly HashSet<string> ProductLabelKeys = new(StringComparer.Ordinal)
+    {
+        "INTRO_TITLE", "INTRO_INSTRUCTIONS", "SETTINGS_TITLE",
+        "SETTINGS_GENERAL_BRIGHTNESS_STARTUP_DESC", "SETTINGS_GENERAL_ACRYLIC_DESC", "SETTINGS_GENERAL_MICA_DESC",
+        "SETTINGS_GENERAL_DIS_MONITOR_FEATURES_DESC", "SETTINGS_GENERAL_DIS_OVERLAY_DESC",
+        "SETTINGS_FEATURES_CUR_BRIGHTNESS_DESC", "SETTINGS_FEATURES_POWER_WARNING", "SETTINGS_FEATURES_ADD_DESC",
+        "SETTINGS_FEATURES_VCP_LIST_DESC", "SETTINGS_TIME_STARTUP_DESC", "SETTINGS_UPDATES_VERSION", "SETTINGS_UPDATES_AVAILABLE"
+    };
+
+    private static readonly string[] UpstreamProductNames =
+        ["Twinkle Tray", "توينكل تراي", "টুইঙ্কল ট্রে", "ट्विंकल ट्रे", "توینکڵ ترەی", "ட்விங்கிள் தட்டு", "ถาด Twinkle"];
 
     public static IReadOnlyList<(string Code, string Name)> AvailableLanguages()
     {
@@ -160,6 +180,8 @@ public static class LocalizationService
         ["NATIVE_IDLE_RESTORE_DELAY"] = "유휴 상태 복원 지연(초)",
         ["NATIVE_FULL_FEATURES"] = "하드웨어 밝기 및 DDC/CI 기능, HDR의 SDR 밝기, 소프트웨어 밝기 조절, 모니터 밝기 보정, 태양 위치 예약, 다중 동작 단축키, 앱 프로필, 주변 조도 센서 및 유휴 상태 밝기 조절.",
         ["NATIVE_HARDWARE_SUPPORT"] = "하드웨어 지원",
+        ["NATIVE_SUPPORTED_PLATFORMS"] = "지원 플랫폼",
+        ["NATIVE_SUPPORTED_PLATFORMS_DESC"] = "Windows x64를 지원합니다. macOS, Apple 하드웨어 및 Windows ARM64 실행은 현재 지원하지 않습니다.",
         ["NATIVE_HARDWARE_SUPPORT_DESC"] = "사용할 수 있는 기능은 디스플레이와 센서가 지원하는 기능에 따라 달라집니다. 모니터 자체 설정에서 DDC/CI를 켜면 하드웨어 제어 기능을 사용할 수 있습니다.",
         ["NATIVE_POLL_SECONDS"] = "값 읽기 간격(초)",
         ["NATIVE_MAIN_CONTROL"] = "기본 밝기 조절 방식",
@@ -208,7 +230,7 @@ public static class LocalizationService
         ["NATIVE_WINDOWS_GLYPH"] = "Windows 아이콘(유니코드 문자)",
         ["NATIVE_ICON_PATH"] = "로컬 아이콘 경로(.png, .jpg, .ico)",
         ["NATIVE_EXPORT"] = "설정 내보내기",
-        ["NATIVE_RESET_CONFIRM"] = "Twinkle Tray의 모든 설정을 기본값으로 초기화할까요?",
+        ["NATIVE_RESET_CONFIRM"] = "Twinkle Tray Native의 모든 설정을 기본값으로 초기화할까요?",
         ["NATIVE_UNMAPPED"] = "연결하지 않음",
         ["NATIVE_APPLY_MAPPINGS"] = "디스플레이 연결 적용",
         ["NATIVE_LOGGING"] = "진단 로그 저장",
@@ -240,7 +262,7 @@ public static class LocalizationService
         ["NATIVE_SOLAR_nightEnd"] = "밤 종료",
         ["NATIVE_SOLAR_night"] = "밤",
         ["NATIVE_SOLAR_nadir"] = "태양 자정",
-        ["NATIVE_GENERAL_DESCRIPTION"] = "Twinkle Tray의 모양과 동작을 설정합니다. 변경 사항은 자동으로 저장됩니다.",
+        ["NATIVE_GENERAL_DESCRIPTION"] = "Twinkle Tray Native의 모양과 동작을 설정합니다. 변경 사항은 자동으로 저장됩니다.",
         ["NATIVE_LINK_DESCRIPTION"] = "밝기 패널에서 모든 디스플레이의 밝기를 함께 조절합니다.",
         ["NATIVE_SCROLL_STEP"] = "밝기 조절 간격",
         ["NATIVE_SCROLL_DESCRIPTION"] = "슬라이더 위에서 마우스 휠을 움직일 때 변경할 밝기입니다.",
@@ -267,14 +289,14 @@ public static class LocalizationService
         ["NATIVE_IDLE_MINUTES"] = "대기 시간(분)",
         ["NATIVE_IDLE_BRIGHTNESS"] = "유휴 상태의 밝기",
         ["NATIVE_IDLE_RESTORE"] = "다시 마우스나 키보드를 사용하면 이전 밝기로 돌아갑니다.",
-        ["NATIVE_PORT_TITLE"] = "Twinkle Tray · WinUI 3",
+        ["NATIVE_PORT_TITLE"] = "Twinkle Tray Native",
         ["NATIVE_PORT_DESCRIPTION"] = "원본 Twinkle Tray의 구성과 번역을 바탕으로 만든 네이티브 Windows 앱입니다.",
         ["NATIVE_IMPLEMENTED_TITLE"] = "현재 구현된 기능",
         ["NATIVE_IMPLEMENTED"] = "DDC/CI 및 WMI 밝기 조절, 지원되는 모니터의 대비, 트레이 패널, 디스플레이별 설정, 예약 변경, 전역 단축키 및 유휴 상태 밝기 조절.",
         ["NATIVE_PENDING_TITLE"] = "아직 이식되지 않은 기능",
         ["NATIVE_PENDING"] = "고급 HDR/SDR 조절, 감마 조절, 조도 센서, 앱별 프로필 및 원본의 일부 고급 DDC/CI 기능은 아직 포함되어 있지 않습니다.",
         ["NATIVE_UPSTREAM"] = "원본 프로젝트",
-        ["NATIVE_FORK"] = "WinUI 3 포크",
+        ["NATIVE_FORK"] = "Twinkle Tray Native 프로젝트",
         ["NATIVE_ATTRIBUTION"] = "Twinkle Tray 원작: Xander Frangos 및 기여자. 원본 MIT 라이선스와 저작권 고지를 유지합니다.",
         ["NATIVE_SAVED"] = "변경 사항은 자동으로 저장됩니다.",
         ["NATIVE_SUPPORTS_BRIGHTNESS"] = "밝기 조절 가능",

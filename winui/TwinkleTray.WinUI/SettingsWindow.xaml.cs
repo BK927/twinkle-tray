@@ -135,7 +135,7 @@ public sealed partial class SettingsWindow : Window
         LocalizationService.Configure(_settings.Language);
         try { Root.Language = CultureInfo.GetCultureInfo(LocalizationService.CurrentLanguage).Name; }
         catch (CultureNotFoundException) { Root.Language = "en"; }
-        Title = T("SETTINGS_TITLE", "Twinkle Tray Settings");
+        Title = T("SETTINGS_TITLE", "Twinkle Tray Native Settings");
         WindowTitle.Text = Title;
         GeneralNavigation.Content = T("SETTINGS_SIDEBAR_GENERAL", "General");
         MonitorsNavigation.Content = T("SETTINGS_SIDEBAR_MONITORS", "Monitor Settings");
@@ -217,7 +217,7 @@ public sealed partial class SettingsWindow : Window
 
     private void RenderGeneral()
     {
-        Heading(T("SETTINGS_GENERAL_TITLE", "General"), T("NATIVE_GENERAL_DESCRIPTION", "Personalize Twinkle Tray's appearance and behavior. Changes are saved automatically."));
+        Heading(T("SETTINGS_GENERAL_TITLE", "General"), T("NATIVE_GENERAL_DESCRIPTION", "Personalize Twinkle Tray Native's appearance and behavior. Changes are saved automatically."));
         Section(T("NATIVE_APPEARANCE", "Appearance"));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_THEME_TITLE", "Theme"), null,
             Choice([("system", T("SETTINGS_GENERAL_THEME_SYSTEM", "System preferences (default)")),
@@ -379,12 +379,13 @@ public sealed partial class SettingsWindow : Window
 
     private void RenderAbout()
     {
-        Heading(T("NATIVE_PORT_TITLE", "Twinkle Tray · WinUI 3"), T("NATIVE_PORT_DESCRIPTION", "A native Windows app based on the original Twinkle Tray layout and translations."));
+        Heading(T("NATIVE_PORT_TITLE", "Twinkle Tray Native"), T("NATIVE_PORT_DESCRIPTION", "A native Windows app based on the original Twinkle Tray layout and translations."));
+        PageContent.Children.Add(SettingRow(T("NATIVE_SUPPORTED_PLATFORMS", "Supported platform"), T("NATIVE_SUPPORTED_PLATFORMS_DESC", "Windows x64 is supported. macOS, Apple hardware and Windows ARM64 execution are not currently supported.")));
         PageContent.Children.Add(SettingRow(T("NATIVE_IMPLEMENTED_TITLE", "Available features"), T("NATIVE_FULL_FEATURES", "Hardware brightness and DDC/CI features, HDR SDR brightness, software dimming, calibrated monitor ranges, solar schedules, multi-action shortcuts, app profiles, ambient light sensors, and idle dimming.")));
         PageContent.Children.Add(SettingRow(T("NATIVE_HARDWARE_SUPPORT", "Hardware support"), T("NATIVE_HARDWARE_SUPPORT_DESC", "Available controls depend on the capabilities reported by your displays and sensors. Enable DDC/CI in the display's own settings to access its hardware controls.")));
         var links = new StackPanel { Spacing = 8 };
         links.Children.Add(new HyperlinkButton { Content = T("NATIVE_UPSTREAM", "Original project"), NavigateUri = new Uri("https://github.com/xanderfrangos/twinkle-tray"), Padding = new Thickness(0) });
-        links.Children.Add(new HyperlinkButton { Content = T("NATIVE_FORK", "WinUI 3 fork"), NavigateUri = new Uri("https://github.com/BK927/twinkle-tray"), Padding = new Thickness(0) });
+        links.Children.Add(new HyperlinkButton { Content = T("NATIVE_FORK", "Twinkle Tray Native project"), NavigateUri = new Uri("https://github.com/BK927/twinkle-tray-native"), Padding = new Thickness(0) });
         links.Children.Add(Description(T("NATIVE_ATTRIBUTION", "Original Twinkle Tray by Xander Frangos and contributors. Original MIT license and copyright notices are retained.")));
         PageContent.Children.Add(Card(links));
     }

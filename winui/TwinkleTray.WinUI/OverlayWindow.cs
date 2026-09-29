@@ -31,7 +31,7 @@ internal sealed class OverlayWindow : Window
 
     public OverlayWindow()
     {
-        Title = "Twinkle Tray brightness overlay";
+        Title = "Twinkle Tray Native brightness overlay";
         // Keep theme resources live for explicit themes and Windows high contrast.
         _root = (Grid)XamlReader.Load("""
             <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"

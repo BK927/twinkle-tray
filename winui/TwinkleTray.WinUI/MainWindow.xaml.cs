@@ -21,7 +21,8 @@ public sealed partial class MainWindow : Window
 {
     private readonly AppController _controller;
     private readonly Dictionary<string, Slider> _sliders = new();
-    private readonly Dictionary<string, TextBlock> _levels = new();
+    private readonly Dictionary<Slider, TextBox> _numberEditors = new();
+    private readonly Dictionary<Control, bool> _controlAvailability = new();
     private readonly Dictionary<string, Slider> _contrastSliders = new();
     private readonly Dictionary<string, Slider> _featureSliders = new();
     private readonly Dictionary<string, ComboBox> _featureChoices = new();
@@ -31,8 +32,10 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<string, (string Id, byte Code, double Value)> _pendingFeatures = new();
     private readonly DispatcherTimer _debounce = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly AccessibilitySettings _accessibility = new();
-    private bool _updating, _closing, _flushing, _renderDeferred, _layoutQueued, _positioning, _accessibilitySubscribed;
+    private bool _updating, _closing, _flushing, _renderDeferred, _layoutQueued, _positioning, _accessibilitySubscribed, _refreshing;
     private string _layoutSignature = "";
+    private (string Id, string Text, int Start, int Length)? _refreshDraft;
+    private TextBlock? _emptyMessage;
     private Point _anchorCursor;
     private long _deactivatedAt;
     private readonly nint _hwnd;
@@ -85,16 +88,20 @@ public sealed partial class MainWindow : Window
         ApplyBackdrop();
         int corner = _controller.Settings.WindowsStyle == "win10" ? 1 : 2;
         DwmSetWindowAttribute(_hwnd, 33, ref corner, sizeof(int));
+        Title = LocalizationService.ProductName;
+        bool win10 = _controller.Settings.WindowsStyle == "win10";
+        Grid.SetRow(ToolbarSurface, win10 ? 0 : 2);
+        ToolbarSurface.BorderThickness = win10 ? new Thickness(0, 0, 0, 1) : new Thickness(0, 1, 0, 0);
         Heading.Text = T("PANEL_TITLE", "Adjust Brightness");
-        ToolTipService.SetToolTip(Heading, Heading.Text);
+        ToolTipService.SetToolTip(Heading, LocalizationService.ProductName + "\n" + T("GENERIC_REFRESH_DISPLAYS", "Refresh displays") + " (F5)");
         ToolTipService.SetToolTip(LinkButton, T("PANEL_BUTTON_LINK_LEVELS", "Link levels"));
         AutomationProperties.SetName(LinkButton, T("PANEL_BUTTON_LINK_LEVELS", "Link levels"));
         ToolTipService.SetToolTip(PowerButton, T("PANEL_BUTTON_TURN_OFF_DISPLAYS", "Turn off displays"));
         AutomationProperties.SetName(PowerButton, T("PANEL_BUTTON_TURN_OFF_DISPLAYS", "Turn off displays"));
         ToolTipService.SetToolTip(SettingsButton, T("GENERIC_SETTINGS", "Settings"));
         AutomationProperties.SetName(SettingsButton, T("GENERIC_SETTINGS", "Settings"));
-        ToolTipService.SetToolTip(RefreshButton, T("GENERIC_REFRESH_DISPLAYS", "Refresh displays"));
-        AutomationProperties.SetName(RefreshButton, T("GENERIC_REFRESH_DISPLAYS", "Refresh displays"));
+        RefreshMenuItem.Text = T("GENERIC_REFRESH_DISPLAYS", "Refresh displays") + " (F5)";
+        AutomationProperties.SetName(RefreshProgress, T("GENERIC_DETECTING_DISPLAYS", "Detecting displays…"));
         LinkButton.IsChecked = _controller.Settings.LinkedBrightness;
         RenderMonitors();
     }
@@ -118,89 +125,84 @@ public sealed partial class MainWindow : Window
         }
         var focused = Root.XamlRoot is null ? null : FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject;
         string? focusId = null;
+        (string Text, int Start, int Length)? editorDraft = null;
         FocusState focusState = FocusState.Keyboard;
         while (focused is not null)
         {
             if (focused is Control control && !string.IsNullOrEmpty(AutomationProperties.GetAutomationId(control)))
-            { focusId = AutomationProperties.GetAutomationId(control); focusState = control.FocusState; break; }
+            {
+                focusId = AutomationProperties.GetAutomationId(control); focusState = control.FocusState;
+                if (control is TextBox editor && _numberEditors.ContainsValue(editor)) editorDraft = (editor.Text, editor.SelectionStart, editor.SelectionLength);
+                break;
+            }
             focused = VisualTreeHelper.GetParent(focused);
         }
         double scrollOffset = BodyScroll.VerticalOffset;
         _updating = true;
         try
         {
-            MonitorList.Children.Clear(); _sliders.Clear(); _levels.Clear(); _contrastSliders.Clear(); _featureSliders.Clear(); _featureChoices.Clear(); _focusTargets.Clear();
-            foreach (var monitor in monitors)
+            MonitorList.Children.Clear(); _sliders.Clear(); _numberEditors.Clear(); _controlAvailability.Clear(); _contrastSliders.Clear(); _featureSliders.Clear(); _featureChoices.Clear(); _focusTargets.Clear(); _emptyMessage = null;
+            bool linked = _controller.Settings.LinkedBrightness;
+            var displayed = linked ? monitors.Where(_controller.CanControl).TakeLast(1).ToList() : monitors;
+            bool expanded = !linked && monitors.Any(HasExtraControls);
+            foreach (var monitor in displayed)
             {
                 var preferences = _controller.Preferences(monitor.Id);
+                string id = linked ? "all" : monitor.Id;
+                string name = linked ? T("GENERIC_ALL_DISPLAYS", "All displays") : _controller.DisplayName(monitor);
                 var card = new StackPanel { Spacing = 4 };
+                AutomationProperties.SetAutomationId(card, "monitor:" + id);
                 var title = new Grid { ColumnSpacing = 8, MinHeight = 24 };
                 title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 title.Children.Add(new FontIcon { Glyph = string.IsNullOrWhiteSpace(preferences.IconGlyph) ? (monitor.Connection.Contains("WMI", StringComparison.OrdinalIgnoreCase) ? "\uE770" : "\uE7F4") : preferences.IconGlyph, FontSize = 20, VerticalAlignment = VerticalAlignment.Center });
-                var label = new TextBlock { Text = preferences.ShowName ? _controller.DisplayName(monitor) : "", FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
-                ToolTipService.SetToolTip(label, _controller.DisplayName(monitor));
+                var label = new TextBlock { Text = linked || preferences.ShowName ? name : "", FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                ToolTipService.SetToolTip(label, name);
                 Grid.SetColumn(label, 1); title.Children.Add(label);
-                var level = new TextBlock { Text = $"{_controller.LogicalBrightness(monitor):0}", FontSize = 14, VerticalAlignment = VerticalAlignment.Center, MinWidth = 32, TextAlignment = TextAlignment.Right };
-                Grid.SetColumn(level, 2); title.Children.Add(level); _levels[monitor.Id] = level;
-                level.Visibility = preferences.ShowValue ? Visibility.Visible : Visibility.Collapsed;
                 card.Children.Add(title);
-                var slider = MakeSlider(monitor.Id, _controller.LogicalBrightness(monitor), false, _controller.DisplayName(monitor));
-                slider.IsEnabled = _controller.CanControl(monitor);
-                card.Children.Add(slider); _sliders[monitor.Id] = slider;
+                var slider = MakeSlider(id, _controller.LogicalBrightness(monitor), false, name, _controller.CanControl(monitor));
+                card.Children.Add(MakeControlRow(slider, T("PANEL_LABEL_BRIGHTNESS", "Brightness"), expanded ? DefaultFeatureIcon(0x10) : null, linked || preferences.ShowValue, expanded));
+                _sliders[id] = slider;
+                AttachWheel(card, slider);
                 if (!_controller.CanControl(monitor))
                 {
-                    level.Text = "—";
                     card.Children.Add(SecondaryText(T("GENERIC_NOT_SUPPORTED", "Not supported") + " · " + monitor.Connection));
                 }
+                if (linked) { MonitorList.Children.Add(card); continue; }
                 bool configuredContrast = preferences.Features.TryGetValue(0x12, out var contrastFeature) && contrastFeature.Enabled;
                 if (preferences.ShowContrast && monitor.SupportsContrast && !configuredContrast)
                 {
-                    card.Children.Add(SecondaryText(T("PANEL_LABEL_CONTRAST", "Contrast"), new Thickness(0, 4, 0, 0)));
-                    var contrast = MakeSlider(monitor.Id, monitor.Contrast ?? 50, true, T("PANEL_LABEL_CONTRAST", "Contrast") + " " + _controller.DisplayName(monitor));
+                    string contrastName = T("PANEL_LABEL_CONTRAST", "Contrast");
+                    var contrast = MakeSlider(monitor.Id, monitor.Contrast ?? 50, true, name);
                     _contrastSliders[monitor.Id] = contrast;
-                    card.Children.Add(contrast);
+                    card.Children.Add(MakeControlRow(contrast, contrastName, DefaultFeatureIcon(0x12), true, true));
                 }
                 foreach (var pair in preferences.Features.Where(f => f.Value.Enabled && !f.Value.LinkedToBrightness))
                 {
                     var feature = _controller.Features(monitor.Id).FirstOrDefault(f => f.Code == pair.Key);
                     if (feature is null) continue;
-                    string name = string.IsNullOrWhiteSpace(pair.Value.Name) ? feature.Name : pair.Value.Name;
-                    var featureHeading = new Grid { ColumnSpacing = 8, Margin = new Thickness(0, 4, 0, 0) };
-                    featureHeading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                    featureHeading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                    if (pair.Value.IconType == "text" && pair.Value.IconText.Length > 0) featureHeading.Children.Add(new TextBlock { Text = pair.Value.IconText, FontSize = 13, MaxWidth = 48, TextTrimming = TextTrimming.CharacterEllipsis });
-                    else if (pair.Value.IconType == "image" && Path.IsPathFullyQualified(pair.Value.IconPath) && File.Exists(pair.Value.IconPath))
-                    {
-                        try { featureHeading.Children.Add(new Image { Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(pair.Value.IconPath)), Width = 16, Height = 16 }); } catch (Exception exception) when (exception is ArgumentException or System.Runtime.InteropServices.COMException) { Program.Log(exception); }
-                    }
-                    else if (pair.Value.IconGlyph.Length > 0) featureHeading.Children.Add(new FontIcon { Glyph = pair.Value.IconGlyph, FontSize = 16 });
-                    var featureLabel = SecondaryText(name);
-                    featureLabel.TextWrapping = TextWrapping.NoWrap; featureLabel.TextTrimming = TextTrimming.CharacterEllipsis;
-                    ToolTipService.SetToolTip(featureLabel, name);
-                    Grid.SetColumn(featureLabel, 1); featureHeading.Children.Add(featureLabel);
-                    card.Children.Add(featureHeading);
+                    string featureName = string.IsNullOrWhiteSpace(pair.Value.Name) ? feature.Name : pair.Value.Name;
+                    var icon = FeatureIcon(pair.Value, feature.Code);
                     if (feature.AllowedValues.Count > 0)
                     {
-                        var choice = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 14 };
+                        var choice = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, FontSize = 13, MinWidth = 0 };
                         foreach (uint item in feature.AllowedValues) choice.Items.Add(new ComboBoxItem { Content = FeatureValueName(feature.Code, item), Tag = item });
                         choice.SelectedItem = choice.Items.Cast<ComboBoxItem>().FirstOrDefault(i => (uint)i.Tag == feature.Current);
-                        AutomationProperties.SetName(choice, name + " " + _controller.DisplayName(monitor));
+                        AutomationProperties.SetName(choice, featureName + " " + name);
                         RegisterFocusTarget(choice, "feature:" + monitor.Id + ":" + feature.Code);
                         _featureChoices[monitor.Id + ":" + feature.Code] = choice;
                         choice.SelectionChanged += async (_, _) =>
                         {
-                            if (_updating || choice.SelectedItem is not ComboBoxItem selected) return;
+                            if (_updating || _refreshing || !choice.IsEnabled || choice.SelectedItem is not ComboBoxItem selected) return;
                             try { await _controller.SetFeatureAsync(monitor.Id, feature.Code, (uint)selected.Tag); }
                             catch (Exception exception) { ShowError(exception.Message); }
                         };
-                        card.Children.Add(choice);
+                        card.Children.Add(MakeFeatureRow(choice, icon, featureName));
                     }
                     else
                     {
                         var control = new Slider { Minimum = pair.Value.Min, Maximum = Math.Max(pair.Value.Min + 1, Math.Min(pair.Value.Max, feature.Maximum)), Value = feature.Current, StepFrequency = 1, MinHeight = 32 };
-                        AutomationProperties.SetName(control, name + " " + _controller.DisplayName(monitor));
+                        AutomationProperties.SetName(control, featureName + " " + name);
                         RegisterFocusTarget(control, "feature:" + monitor.Id + ":" + feature.Code);
                         TrackSliderGesture(control);
                         _featureSliders[monitor.Id + ":" + feature.Code] = control;
@@ -210,59 +212,167 @@ public sealed partial class MainWindow : Window
                             _pendingFeatures[monitor.Id + ":" + feature.Code] = (monitor.Id, feature.Code, args.NewValue);
                             _debounce.Stop(); _debounce.Start();
                         };
-                        card.Children.Add(control);
+                        card.Children.Add(MakeControlRow(control, featureName, icon, true, true));
                     }
                 }
                 MonitorList.Children.Add(card);
             }
-            if (monitors.Count == 0)
+            if (displayed.Count == 0)
             {
                 MonitorList.Children.Add(new FontIcon { Glyph = "\uE7F4", FontSize = 20, Margin = new Thickness(0, 16, 0, 0) });
-                MonitorList.Children.Add(SecondaryText(T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings."), new Thickness(8, 0, 8, 16)));
+                _emptyMessage = SecondaryText(T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings."), new Thickness(8, 0, 8, 16));
+                MonitorList.Children.Add(_emptyMessage);
             }
-            UpdateToolbar(monitors);
+            UpdateToolbar(monitors); ApplyRefreshingState();
             _layoutSignature = signature; _renderDeferred = false; RenderGeneration++;
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (_closing) return;
                 BodyScroll.ChangeView(null, scrollOffset, null, true);
-                if (focusId is not null && _focusTargets.TryGetValue(focusId, out var target)) target.Focus(focusState == FocusState.Unfocused ? FocusState.Keyboard : focusState);
+                if (focusId is not null && _focusTargets.TryGetValue(focusId, out var target))
+                {
+                    if (target is TextBox editor && editorDraft is { } draft)
+                    { editor.Text = draft.Text; editor.Select(Math.Min(draft.Start, editor.Text.Length), Math.Min(draft.Length, Math.Max(0, editor.Text.Length - draft.Start))); }
+                    target.Focus(focusState == FocusState.Unfocused ? FocusState.Keyboard : focusState);
+                }
                 QueueLayout();
             });
         }
         finally { _updating = false; }
     }
 
-    private Slider MakeSlider(string id, double value, bool contrast, string name)
+    private Slider MakeSlider(string id, double value, bool contrast, string name, bool enabled = true)
     {
         var slider = new Slider { Minimum = 0, Maximum = 100, StepFrequency = 1, Value = value, MinHeight = 32, HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(slider, name + " " + T(contrast ? "PANEL_LABEL_CONTRAST" : "PANEL_LABEL_BRIGHTNESS", contrast ? "Contrast" : "Brightness"));
-        RegisterFocusTarget(slider, (contrast ? "contrast:" : "brightness:") + id);
+        RegisterFocusTarget(slider, (contrast ? "contrast:" : "brightness:") + id, enabled);
         TrackSliderGesture(slider);
         slider.ValueChanged += (_, args) =>
         {
             if (_updating) return;
             bool linked = !contrast && _controller.Settings.LinkedBrightness;
             _pending[linked ? "all:brightness" : id + (contrast ? ":contrast" : ":brightness")] = (id, args.NewValue, contrast, linked);
-            if (!contrast && _levels.TryGetValue(id, out var level)) level.Text = $"{args.NewValue:0}";
-            if (!contrast && _controller.Settings.LinkedBrightness)
-            {
-                _updating = true;
-                foreach (var pair in _sliders.Where(x => x.Value.IsEnabled)) { pair.Value.Value = args.NewValue; _levels[pair.Key].Text = $"{args.NewValue:0}"; }
-                _updating = false;
-            }
             _debounce.Stop(); _debounce.Start();
-        };
-        slider.PointerWheelChanged += (_, args) =>
-        {
-            slider.Value = Math.Clamp(slider.Value + Math.Sign(args.GetCurrentPoint(slider).Properties.MouseWheelDelta) * _controller.Settings.ScrollStep * (_controller.Settings.InvertScroll ? -1 : 1), 0, 100);
-            args.Handled = true;
         };
         return slider;
     }
 
+    private bool HasExtraControls(MonitorSnapshot monitor)
+    {
+        var preferences = _controller.Preferences(monitor.Id);
+        return preferences.ShowContrast && monitor.SupportsContrast || preferences.Features.Any(pair =>
+            pair.Value.Enabled && !pair.Value.LinkedToBrightness && _controller.Features(monitor.Id).Any(feature => feature.Code == pair.Key));
+    }
+
+    private static FontIcon DefaultFeatureIcon(byte code) => new()
+    {
+        Glyph = code switch { 0x10 or 0x13 => "\uE706", 0x12 => "\uE793", 0x62 => "\uE767", 0x60 => "\uE839", 0xD6 => "\uE7E8", _ => "\uE897" },
+        FontSize = 20, VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    private static FrameworkElement FeatureIcon(FeatureSettings settings, byte code)
+    {
+        if (settings.IconType == "text" && settings.IconText.Length > 0)
+            return new TextBlock { Text = settings.IconText, FontSize = 12, MaxWidth = 24, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+        if (settings.IconType == "image" && Path.IsPathFullyQualified(settings.IconPath) && File.Exists(settings.IconPath))
+        {
+            try { return new Image { Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(settings.IconPath)), Width = 20, Height = 20 }; }
+            catch (Exception exception) when (exception is ArgumentException or COMException) { Program.Log(exception); }
+        }
+        // E897 is the persisted default (Help), not a feature-specific choice.
+        // Keep settings unchanged and preserve every non-default custom glyph.
+        return !string.IsNullOrEmpty(settings.IconGlyph) && settings.IconGlyph != "\uE897"
+            ? new FontIcon { Glyph = settings.IconGlyph, FontSize = 20, VerticalAlignment = VerticalAlignment.Center }
+            : DefaultFeatureIcon(code);
+    }
+
+    private static Grid MakeFeatureRow(FrameworkElement control, FrameworkElement icon, string name)
+    {
+        var row = new Grid { ColumnSpacing = 8, MinHeight = 32 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        row.Children.Add(icon); Grid.SetColumn(control, 1); row.Children.Add(control);
+        ToolTipService.SetToolTip(icon, name); ToolTipService.SetToolTip(control, name);
+        AutomationProperties.SetName(icon, name);
+        // A nonfocused ComboBox leaves wheel events unhandled. Do not let its
+        // input/power selection row fall through to the monitor brightness row.
+        row.PointerWheelChanged += (_, args) => args.Handled = true;
+        return row;
+    }
+
+    private Grid MakeControlRow(Slider slider, string name, FrameworkElement? icon, bool showValue, bool compact)
+    {
+        var row = new Grid { ColumnSpacing = 8, MinHeight = 32 };
+        if (icon is not null)
+        {
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+            icon.HorizontalAlignment = HorizontalAlignment.Center;
+            ToolTipService.SetToolTip(icon, name); AutomationProperties.SetName(icon, name);
+            row.Children.Add(icon);
+        }
+        int sliderColumn = icon is null ? 0 : 1;
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(slider, sliderColumn); row.Children.Add(slider);
+        var editor = new TextBox
+        {
+            Text = FormatValue(slider.Value), Width = slider.Maximum > 999 ? 56 : 48, MinWidth = 0, MinHeight = 32,
+            FontSize = compact ? 16 : 22, Padding = new Thickness(2, 0, 2, 0), BorderThickness = new Thickness(0),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), TextAlignment = TextAlignment.Right,
+            VerticalContentAlignment = VerticalAlignment.Center, UseSystemFocusVisuals = true,
+            Visibility = showValue ? Visibility.Visible : Visibility.Collapsed,
+        };
+        AutomationProperties.SetName(editor, AutomationProperties.GetName(slider));
+        ToolTipService.SetToolTip(editor, name + $" ({FormatValue(slider.Minimum)}–{FormatValue(slider.Maximum)})");
+        RegisterFocusTarget(editor, AutomationProperties.GetAutomationId(slider) + ":value", _controlAvailability.GetValueOrDefault(slider, true));
+        _numberEditors[slider] = editor;
+        editor.LostFocus += (_, _) => CommitNumericEditor(slider, editor);
+        editor.KeyDown += (_, args) =>
+        {
+            if (args.Key != VirtualKey.Enter) return;
+            CommitNumericEditor(slider, editor); args.Handled = true;
+        };
+        slider.ValueChanged += (_, _) => { if (!HasFocusWithin(editor)) editor.Text = FormatValue(slider.Value); };
+        Grid.SetColumn(editor, sliderColumn + 1); row.Children.Add(editor);
+        AttachWheel(row, slider);
+        return row;
+    }
+
+    private bool CommitNumericEditor(Slider slider, TextBox editor)
+    {
+        if (_updating || _refreshing || !slider.IsEnabled) return false;
+        bool valid = double.TryParse(editor.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out double value) && double.IsFinite(value);
+        if (valid) slider.Value = Math.Clamp(Math.Round(value), slider.Minimum, slider.Maximum);
+        editor.Text = FormatValue(slider.Value);
+        return valid;
+    }
+
+    private static string FormatValue(double value) => value.ToString("0", CultureInfo.CurrentCulture);
+
+    private bool HasFocusWithin(DependencyObject target)
+    {
+        if (Root.XamlRoot is null) return false;
+        for (var focused = FocusManager.GetFocusedElement(Root.XamlRoot) as DependencyObject; focused is not null; focused = VisualTreeHelper.GetParent(focused))
+            if (ReferenceEquals(focused, target)) return true;
+        return false;
+    }
+
+    private void AttachWheel(UIElement target, Slider slider)
+    {
+        target.PointerWheelChanged += (_, args) =>
+        {
+            if (args.Handled || _refreshing || !slider.IsEnabled) return;
+            slider.Value = Math.Clamp(slider.Value + Math.Sign(args.GetCurrentPoint(target).Properties.MouseWheelDelta) *
+                _controller.Settings.ScrollStep * (_controller.Settings.InvertScroll ? -1 : 1), slider.Minimum, slider.Maximum);
+            if (_numberEditors.TryGetValue(slider, out var editor)) editor.Text = FormatValue(slider.Value);
+            args.Handled = true;
+        };
+    }
+
     private string LayoutSignature(IReadOnlyList<MonitorSnapshot> monitors) => JsonSerializer.Serialize(new
     {
+        _controller.Settings.LinkedBrightness, AllDisplays = T("GENERIC_ALL_DISPLAYS", "All displays"),
         ContrastLabel = T("PANEL_LABEL_CONTRAST", "Contrast"), UnsupportedLabel = T("GENERIC_NOT_SUPPORTED", "Not supported"),
         EmptyLabel = T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings."),
         Monitors = monitors.Select(monitor =>
@@ -294,7 +404,6 @@ public sealed partial class MainWindow : Window
                     !_pending.ContainsKey("all:brightness") && !_pending.ContainsKey(monitor.Id + ":brightness"))
                 {
                     slider.Value = _controller.LogicalBrightness(monitor);
-                    if (_levels.TryGetValue(monitor.Id, out var level)) level.Text = _controller.CanControl(monitor) ? $"{slider.Value:0}" : "—";
                 }
                 if (_contrastSliders.TryGetValue(monitor.Id, out var contrast) && !_activePointers.ContainsValue(contrast) && !_pending.ContainsKey(monitor.Id + ":contrast"))
                     contrast.Value = monitor.Contrast ?? 50;
@@ -307,16 +416,21 @@ public sealed partial class MainWindow : Window
                         choice.SelectedItem = choice.Items.Cast<ComboBoxItem>().FirstOrDefault(item => (uint)item.Tag == feature.Current);
                 }
             }
+            if (_sliders.TryGetValue("all", out var linked) && !_activePointers.ContainsValue(linked) && !_pending.ContainsKey("all:brightness"))
+            {
+                var representative = monitors.LastOrDefault(_controller.CanControl);
+                if (representative is not null) linked.Value = _controller.LogicalBrightness(representative);
+            }
         }
         finally { _updating = false; }
     }
 
     private void UpdateToolbar(IReadOnlyList<MonitorSnapshot> monitors)
     {
-        LinkButton.IsEnabled = monitors.Count(_controller.CanControl) > 1;
+        LinkButton.Visibility = monitors.Count(_controller.CanControl) > 1 ? Visibility.Visible : Visibility.Collapsed;
+        LinkButton.IsEnabled = !_refreshing;
         PowerButton.IsEnabled = _controller.Settings.PowerOffMode is "windows" or "both" || (_controller.Settings.PowerOffMode == "ddc" && monitors.Any(monitor => monitor.Connection.Contains("DDC", StringComparison.OrdinalIgnoreCase)));
-        Status.Text = _controller.IsDemo ? "DEMO · " + T("GENERIC_ALL_DISPLAYS", "All displays") : "Twinkle Tray · WinUI 3";
-        ToolTipService.SetToolTip(Status, Status.Text);
+        PowerButton.Visibility = _controller.Settings.PowerOffMode == "none" ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private static TextBlock SecondaryText(string text, Thickness margin = default) => new()
@@ -324,10 +438,12 @@ public sealed partial class MainWindow : Window
         Text = text, Style = (Style)Application.Current.Resources["SecondaryTextStyle"], Margin = margin,
     };
 
-    private void RegisterFocusTarget(Control control, string id)
+    private void RegisterFocusTarget(Control control, string id, bool enabled = true)
     {
         AutomationProperties.SetAutomationId(control, id);
         _focusTargets[id] = control;
+        _controlAvailability[control] = enabled;
+        control.IsEnabled = enabled && !_refreshing;
     }
 
     private void TrackSliderGesture(Slider slider)
@@ -413,10 +529,10 @@ public sealed partial class MainWindow : Window
         int nonClientHeight = Math.Max(0, outerSize.Height - clientSize.Height);
         // Borderless windows may retain a native inset; XAML measures only the client area.
         double clientWidth = Math.Max(1, width - nonClientWidth) / scale;
-        double innerWidth = Math.Max(1, clientWidth - PanelLayout.Padding.Left - PanelLayout.Padding.Right);
+        double innerWidth = Math.Max(1, clientWidth - BodyScroll.Margin.Left - BodyScroll.Margin.Right);
         var available = new Windows.Foundation.Size(innerWidth, double.PositiveInfinity);
-        PanelHeader.Measure(available); PanelFooter.Measure(available); PanelBody.Measure(available);
-        double chromeHeight = PanelLayout.Padding.Top + PanelLayout.Padding.Bottom + PanelHeader.DesiredSize.Height + PanelFooter.DesiredSize.Height + PanelLayout.RowSpacing * 2;
+        ToolbarSurface.Measure(new Windows.Foundation.Size(clientWidth, double.PositiveInfinity)); PanelBody.Measure(available);
+        double chromeHeight = ToolbarSurface.DesiredSize.Height + BodyScroll.Margin.Top + BodyScroll.Margin.Bottom;
         double desiredHeight = chromeHeight + PanelBody.DesiredSize.Height;
         int height = Math.Min((int)Math.Ceiling(desiredHeight * scale) + nonClientHeight, Math.Max(1, work.Height - gap * 2));
         double clientHeight = Math.Max(0, height - nonClientHeight) / scale;
@@ -436,13 +552,58 @@ public sealed partial class MainWindow : Window
     }
 
     internal void ShowError(string message) { ErrorBar.Message = message; ErrorBar.IsOpen = true; if (IsShown) PositionPanel(); }
-    internal void SetRefreshing(bool value) { RefreshButton.IsEnabled = !value; if (value) Status.Text = T("GENERIC_DETECTING_DISPLAYS", "Detecting displays…"); }
+    internal void SetRefreshing(bool value)
+    {
+        if (value && !_refreshing)
+        {
+            var editor = _numberEditors.Values.FirstOrDefault(HasFocusWithin);
+            if (editor is not null) _refreshDraft = (AutomationProperties.GetAutomationId(editor), editor.Text, editor.SelectionStart, editor.SelectionLength);
+        }
+        _refreshing = value;
+        ApplyRefreshingState();
+        if (!value && _refreshDraft is { } draft)
+        {
+            _refreshDraft = null;
+            if (_focusTargets.TryGetValue(draft.Id, out var target) && target is TextBox editor)
+            {
+                editor.Text = draft.Text;
+                editor.Select(Math.Min(draft.Start, editor.Text.Length), Math.Min(draft.Length, Math.Max(0, editor.Text.Length - draft.Start)));
+                if (IsShown) editor.Focus(FocusState.Programmatic);
+            }
+        }
+        QueueLayout();
+    }
+
+    private void ApplyRefreshingState()
+    {
+        foreach (var (control, enabled) in _controlAvailability) control.IsEnabled = enabled && !_refreshing;
+        MonitorList.Opacity = _refreshing ? .35 : 1;
+        RefreshProgress.IsActive = _refreshing;
+        RefreshProgress.Visibility = _refreshing ? Visibility.Visible : Visibility.Collapsed;
+        RefreshMenuItem.IsEnabled = !_refreshing;
+        LinkButton.IsEnabled = !_refreshing;
+        if (_emptyMessage is not null) _emptyMessage.Text = _refreshing ? T("GENERIC_DETECTING_DISPLAYS", "Detecting displays…") : T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings.");
+    }
+
+    internal async Task FlushForVerificationAsync()
+    {
+        if (!(_controller.IsSmokeTest && _controller.IsDemo)) throw new InvalidOperationException("Tray input verification requires isolated demo smoke-test mode.");
+        await FlushAsync();
+        long deadline = Environment.TickCount64 + 5000;
+        while (_flushing && Environment.TickCount64 < deadline) await Task.Delay(10);
+        if (_flushing) throw new TimeoutException("The tray input queue did not complete.");
+    }
+
     internal void CloseForExit() { _closing = true; _debounce.Stop(); Close(); }
     private void Link_Click(object sender, RoutedEventArgs e) { _controller.Settings.LinkedBrightness = LinkButton.IsChecked == true; _controller.SaveSettings(); }
     private async void Power_Click(object sender, RoutedEventArgs e) => await _controller.PowerOffAsync("all");
     private void Settings_Click(object sender, RoutedEventArgs e) => _controller.OpenSettings();
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await _controller.RefreshAsync();
-    private void Root_KeyDown(object sender, KeyRoutedEventArgs e) { if (e.Key == VirtualKey.Escape) { HidePanel(); e.Handled = true; } }
+    private async void Refresh_Click(object sender, RoutedEventArgs e) { if (!_refreshing) await _controller.RefreshAsync(); }
+    private async void Root_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape) { HidePanel(); e.Handled = true; }
+        else if (e.Key == VirtualKey.F5) { e.Handled = true; if (!_refreshing) await _controller.RefreshAsync(); }
+    }
     private static string T(string key, string fallback) => LocalizationService.Get(key, fallback);
     private static string FeatureValueName(byte code, uint value) => code switch
     {
