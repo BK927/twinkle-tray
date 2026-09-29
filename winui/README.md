@@ -1,4 +1,6 @@
-# Twinkle Tray Native · 0.3.1
+# Twinkle Tray Native · 0.3.2
+
+0.3.2는 창의 테두리와 다크 모드 외곽 색을 Windows에 맡기고, 처음 보이기 전에 창 크기를 안정화합니다. 내용은 167ms의 짧은 Fluent 애니메이션으로 등장하며 Windows의 애니메이션 끄기 설정을 따릅니다. 시스템 테마의 색 변경을 즉시 반영하고 WinUI 기본 강조색을 유지합니다. 모니터 새로고침 때 패널 전체가 흐려지는 효과도 제거했습니다. [모양·등장 동작 검증](UI-POLISH.md)
 
 **Twinkle Tray Native**는 원본 Twinkle Tray의 트레이 패널, 설정 구성과 주요 동작을 C#과 WinUI 3로 옮긴 Windows x64용 커뮤니티 포크입니다. 밝기 조절뿐 아니라 고급 DDC/CI, HDR/감마, 시간 예약, 앱별 프로필, 조도 센서, 설정 가져오기와 업데이트 기능을 포함합니다. 원본 Electron 소스는 저장소에 보존하고 네이티브 앱은 `winui/`에 분리했습니다.
 
@@ -45,7 +47,7 @@ Windows 10 버전 2004(빌드 19041) 이상 또는 Windows 11이 필요합니다
 
 제품 이름은 **Twinkle Tray Native**, 저장소는 **BK927/twinkle-tray-native**입니다. 이전 0.2.x의 “Twinkle Tray · WinUI 3”에서 처음 전환할 때는 기존 앱을 종료하고 직접 빌드한 앱 또는 향후 게시되는 x64 ZIP을 수동으로 설치하세요. 구버전에는 예전 업데이트 주소와 파일 이름이 고정되어 있어 저장소 이름 변경을 거치는 자동 업데이트는 보장하지 않습니다.
 
-기존 설정 경로·내보내기 형식·단일 인스턴스 식별자·MSIX 패키지 식별자는 유지합니다. 설정 파일을 옮기거나 이름을 바꿀 필요가 없습니다. 패키징 파일은 `TwinkleTray-Native-0.3.1-x64.zip` 형태이며 태그는 업데이트 호환성을 위해 `winui-v…`를 사용합니다. 0.3.1의 검증 결과와 0.3.0·0.2.2·0.2.1의 과거 기록은 아래에서 구분했습니다.
+기존 설정 경로·내보내기 형식·단일 인스턴스 식별자·MSIX 패키지 식별자는 유지합니다. 설정 파일을 옮기거나 이름을 바꿀 필요가 없습니다. 패키징 파일은 `TwinkleTray-Native-0.3.2-x64.zip` 형태이며 태그는 업데이트 호환성을 위해 `winui-v…`를 사용합니다. 0.3.1의 검증 결과와 0.3.0·0.2.2·0.2.1의 과거 기록은 아래에서 구분했습니다.
 
 Windows 11 스타일은 트레이 도구를 아래쪽에 배치하고 밝기 숫자를 슬라이더 옆에 표시합니다. 연동 상태에서는 슬라이더 하나로 여러 화면을 조절하며 추가 기능은 간결하게 배치했습니다. Windows 10 스타일은 위쪽 도구 모음을 유지합니다. 0.3.0 캡처는 육안으로 확인했고 원본의 소스 구조와 비교했습니다. 설치된 원본 앱 패널을 직접 실행해 비교한 결과는 아닙니다.
 
@@ -125,10 +127,10 @@ $app = '.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe'
 
 ```powershell
 # 빌드한 x64 앱의 포터블 ZIP만 생성
-.\winui\package.ps1 -Architecture x64 -Version 0.3.1 -SkipMsix
+.\winui\package.ps1 -Architecture x64 -Version 0.3.2 -SkipMsix
 
 # ZIP과 MSIX 생성 — Windows SDK의 makeappx.exe 필요
-.\winui\package.ps1 -Architecture x64 -Version 0.3.1
+.\winui\package.ps1 -Architecture x64 -Version 0.3.2
 ```
 
 패키지와 아키텍처별 SHA-256 목록은 `winui/artifacts/packages/`에 생성됩니다. 기본 MSIX는 **서명되지 않은 검증용 패키지**입니다. 실제 설치·배포에는 패키지 Publisher와 일치하는 신뢰된 인증서로 서명해야 합니다. 스크립트는 `-Publisher`와 `-CertificatePath`를 지원하며, 인증서를 자동으로 신뢰 목록에 설치하지 않습니다. 서명된 설치·시작 프로그램·제거 동작은 별도 검증 대상입니다. 프리뷰에서 정식 버전으로의 MSIX 업그레이드에는 숫자 리비전 관리가 필요합니다. `-MsixRevision`과 배포 방법은 [패키징 문서](PACKAGING.md)를 참고하세요.
@@ -136,6 +138,12 @@ $app = '.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe'
 포터블 앱의 업데이트는 [BK927/twinkle-tray-native](https://github.com/BK927/twinkle-tray-native/releases)의 `winui-v…` 릴리스와 아키텍처에 맞는 `TwinkleTray-Native-…` ZIP을 사용합니다. 업데이트 화면에서 확인·다운로드·설치를 실행하며 SHA-256 확인 후 별도 준비 폴더에서 설치하고 실패 시 기존 파일 복구를 시도합니다. 릴리스에는 ZIP과 `SHA256SUMS.txt`가 필요합니다. MSIX 설치본은 해당 패키지 배포 경로로 업데이트하며, 원본 Microsoft Store 앱의 배포 ID를 공유하지 않습니다. 0.2.x에서 처음 옮길 때는 위의 수동 전환 안내를 따르세요.
 
 ## 검증 기록
+
+0.3.2의 Windows x64 로컬 검사는 **코어 54개, 설정 페이지 11개, 런타임 44개, 레이아웃 144개, UI·팝업 59개, IPC 11개 그룹**이 통과했습니다. 완료 시각은 **2026-09-29 11:48:09.5517957 UTC**이며 `winui/artifacts/test-results/20260929T114458986-058f34149d9940bb9298062a9099fe10/`에 원본 JSON과 PNG 14개가 있습니다. 테마·네이티브 테두리·강조색·Acrylic 선택, 크기 확정 후 표시, 등장 완료와 취소, 새로고침 투명도 유지 검사를 추가했습니다. 모니터·사용자 설정 쓰기는 0회이며 ZIP·MSIX의 EXE와 DLL 3개는 검사 파일의 SHA-256과 일치합니다.
+
+공유 데스크톱의 전경 제한 때문에 테스트 전용 시작 창을 실제 클릭한 후 검사했습니다. 기존 버전에서도 같은 제한이 재현됐으며 검사 기준은 유지했습니다. 실제 별도 창으로 전경이 8ms에 이동했고 42ms에 패널 닫힘을 관측했습니다. Windows 테마·강조색 설정 자체를 바꾸지는 않았으며 PNG는 Windows 테두리·그림자·Acrylic·움직임을 포함하지 않습니다. 시각적인 애니메이션 품질과 물리 트레이 입력 전체 흐름은 별도 확인 대상입니다. 재실행 시 선택적으로 `TWINKLETRAY_SMOKE_INTERACTIVE=1` 환경 변수를 설정하고 시작 버튼을 클릭할 수 있습니다. [세부 범위](UI-POLISH.md)
+
+### 이전 0.3.1 기록
 
 0.3.1의 Windows x64 로컬 검사는 **코어 54개, 설정 페이지 11개, 런타임 44개(자동 제어 회귀 20개 포함), 레이아웃 144개, UI 상호작용·팝업 53개, IPC 11개 그룹이 모두 통과**했습니다. PNG 14개를 생성했고 UI 오류, 하드웨어 쓰기, 사용자 설정 쓰기는 모두 0입니다. 아래 0.3.0·0.2.2 및 **0.2.1 실제 장치 시험**은 별도 과거 기록입니다. CI 결과는 [Actions](https://github.com/BK927/twinkle-tray-native/actions)에서, 실물 모니터 시험은 [자동 검증 보고서](VERIFICATION.md)에서 확인할 수 있습니다.
 
@@ -228,7 +236,7 @@ Twinkle Tray Native is an independent community C#/WinUI 3 port of Twinkle Tray.
 
 Build on Windows 10 build 19041 or later with the .NET 10 SDK: `./winui/build.ps1 -Architecture x64`. Run with `--demo` for simulated monitors, `--settings` for preferences, or `--help` for CLI usage. Distribute the whole self-contained output directory or follow [PACKAGING.md](PACKAGING.md); default MSIX packages are unsigned and require trusted signing before deployment. Published packages are listed in [releases](https://github.com/BK927/twinkle-tray-native/releases), and CI outcomes/artifacts in [Actions](https://github.com/BK927/twinkle-tray-native/actions). Install the new build manually once when moving from 0.2.x; the executable name and existing settings remain compatible.
 
-The local 0.3.1 Windows x64 run passed 54 core tests, 11 settings pages, 44 runtime assertions (including 20 automation regressions), 144 layout cases, 53 UI checks and 11 IPC groups with 14 previews, zero hardware/user-settings writes and no UI errors. Demo and normal mode share the flyout lifecycle. Actual native-window activation verified dismissal; gesture requests, keyboard-dismiss methods and a synthetic anchor have separately documented coverage. Physical tray clicks, Escape and end-to-end wheel routing remain unverified. Original comparison remains source-based; native DPI sessions, high contrast and an installed upstream live comparison remain unverified. See [UI-POLISH.md](UI-POLISH.md).
+The local 0.3.2 Windows x64 run passed 54 core tests, 11 settings pages, 44 runtime assertions (including 20 automation regressions), 144 layout cases, 59 UI checks and 11 IPC groups with 14 previews, zero hardware/user-settings writes and no UI errors. New checks cover native frame/theme/accent, Acrylic selection, settled reveal bounds, animation completion/cancellation and refresh opacity. A real test-start input preceded native foreground/dismissal verification on the shared desktop. Gesture requests, keyboard-dismiss methods and a synthetic anchor have separately documented coverage. Physical tray clicks, Escape and end-to-end wheel routing remain unverified. Content PNGs exclude native frame/backdrop and motion. Original comparison remains source-based; actual OS theme/accent changes, native DPI sessions, high contrast and an installed upstream live comparison remain unverified. See [UI-POLISH.md](UI-POLISH.md).
 
 **Implemented does not mean tested on every device.** For 0.2.1, all 46 core tests, 11 settings pages, 41 simulated runtime assertions (including 20 automation regressions) and 11 IPC test groups passed, including fixture update copying and rollback. Both x64 and ARM64 build jobs passed for commit `704dac7` in [GitHub Actions run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766). Physical tests covered LG ULTRAGEAR+ and AOC Q32V3WG5 on Windows 11 x64: small DDC brightness/contrast changes, exact restoration, and 98% gamma requests with all 768 original ramp values restored and the other display unchanged. Gamma restoration on shutdown/hotplug, Apple hardware, ARM64 execution, signed MSIX installation and the full download/process-restart upgrade flow remain unverified. See the [verification report](VERIFICATION.md), [source audit and validation checklist](PORT-CHECKLIST.md) and [hardware documentation](TwinkleTray.Hardware/README.md) for precise limits.
 

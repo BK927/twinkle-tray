@@ -22,7 +22,7 @@ public sealed partial class MainWindow
 
     private void Panel_Activated(object sender, WindowActivatedEventArgs args)
     {
-        if (_closing) return;
+        if (_closing || _preparingPresentation) return;
         if (args.WindowActivationState != WindowActivationState.Deactivated)
         {
             _popupFocusWatch.Stop();
@@ -65,14 +65,18 @@ public sealed partial class MainWindow
 
     internal void ShowPanel(TrayActivation activation)
     {
+        bool alreadyVisible = IsShown && !_preparingPresentation;
         _dismissedTrayGesture = 0;
         _anchorBounds = activation.Anchor;
         IsShown = true;
         _controller.SetTrayPanelVisible(true);
-        PositionPanel(useAnchor: true);
-        AppWindow.Show(); Activate(); SetForegroundWindow(_hwnd);
         RestorePanelFocus(activation.Keyboard);
-        QueueLayout();
+        if (alreadyVisible)
+        {
+            PositionPanel(useAnchor: true);
+            Activate(); SetForegroundWindow(_hwnd);
+        }
+        else BeginPanelPresentation();
     }
 
     private void RestorePanelFocus(bool keyboard)
@@ -106,7 +110,7 @@ public sealed partial class MainWindow
         uint request = _panelFocusRequest;
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!_panelFocusPending || request != _panelFocusRequest || !IsShown || _closing || _refreshing) return;
+            if (!_panelFocusPending || request != _panelFocusRequest || !IsShown || _closing || _refreshing || _preparingPresentation) return;
             Control? target = _lastFocusedControl is { } id && _focusTargets.TryGetValue(id, out var last) && last.IsEnabled && last.Visibility == Visibility.Visible ? last : null;
             target ??= _sliders.Values.FirstOrDefault(slider => slider.IsEnabled);
             target ??= SettingsButton;
@@ -117,6 +121,7 @@ public sealed partial class MainWindow
 
     public void HidePanel()
     {
+        CancelPanelPresentation();
         if (Root.XamlRoot is not null && FocusManager.GetFocusedElement(Root.XamlRoot) is Control focused)
         {
             string id = AutomationProperties.GetAutomationId(focused);
@@ -128,6 +133,7 @@ public sealed partial class MainWindow
         IsShown = false;
         _controller.SetTrayPanelVisible(false);
         AppWindow.Hide();
+        SetPanelCloaked(false);
     }
 
     public void TogglePanel()

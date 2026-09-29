@@ -6,14 +6,13 @@
         <MenuFlyout><MenuFlyoutItem x:Name="RefreshMenuItem" Text="Refresh displays (F5)" Click="Refresh_Click"><MenuFlyoutItem.Icon><SymbolIcon Symbol="Refresh"/></MenuFlyoutItem.Icon></MenuFlyoutItem></MenuFlyout>
       </Grid.ContextFlyout>
       <Border x:Name="SolidBackground" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
-      <Border BorderBrush="{ThemeResource SurfaceStrokeColorDefaultBrush}" BorderThickness="1" IsHitTestVisible="False" />
       <Grid x:Name="PanelLayout">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <Border x:Name="ToolbarSurface" Grid.Row="2" Padding="18,6,18,10">
           <Grid x:Name="PanelHeader" ColumnSpacing="8">
             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-              <ProgressRing x:Name="RefreshProgress" Width="16" Height="16" MinWidth="16" MinHeight="16" Margin="0,0,8,0" IsActive="False" Visibility="Collapsed" VerticalAlignment="Center"/>
+              <ProgressRing x:Name="RefreshProgress" Width="16" Height="16" MinWidth="16" MinHeight="16" Margin="0,0,8,0" IsActive="False" Opacity="0" VerticalAlignment="Center"/>
               <TextBlock x:Name="Heading" Grid.Column="1" VerticalAlignment="Center" FontSize="13" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Adjust Brightness" TextTrimming="CharacterEllipsis" />
             </Grid>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">

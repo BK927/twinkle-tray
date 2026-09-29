@@ -22,7 +22,7 @@ Twinkle Tray Native keeps the familiar tray workflow and monitor controls while 
 
 The [port checklist](winui/PORT-CHECKLIST.md) distinguishes implemented features from actual device tests. The original Electron source is retained in this repository.
 
-## Try 0.3.1
+## Try 0.3.2
 
 Build the current x64 application from source using the steps below. Published packages are listed in the [release channel](https://github.com/BK927/twinkle-tray-native/releases); successful [GitHub Actions runs](https://github.com/BK927/twinkle-tray-native/actions/workflows/winui.yml) may also provide build artifacts. Check the version and result of the selected run. Keep the complete output folder, including DLLs, `Assets` and `Localization`, together and run `TwinkleTray.WinUI.exe`; the executable keeps its existing filename for compatibility.
 
@@ -33,9 +33,11 @@ To try the interface without changing real monitor brightness:
 .\TwinkleTray.WinUI.exe --demo --settings
 ```
 
-The current development version is **0.3.1**. When moving from the earlier 0.2.x “Twinkle Tray · WinUI 3” builds, close the old app and install the new build manually once. Existing settings remain at `%APPDATA%\TwinkleTray.WinUI\settings.json`; there is no need to move or rename them. Automatic updating across the repository rename is not guaranteed for old binaries. [Packaging and upgrades](winui/PACKAGING.md) explains the preserved compatibility identifiers.
+The current development version is **0.3.2**. When moving from the earlier 0.2.x “Twinkle Tray · WinUI 3” builds, close the old app and install the new build manually once. Existing settings remain at `%APPDATA%\TwinkleTray.WinUI\settings.json`; there is no need to move or rename them. Automatic updating across the repository rename is not guaranteed for old binaries. [Packaging and upgrades](winui/PACKAGING.md) explains the preserved compatibility identifiers.
 
-## 0.3.1 interaction refinements
+## Tray appearance and interaction
+
+Version **0.3.2** adds a system-drawn border, shadow/corner eligibility and native dark-frame colors; the window settles its layout while DWM-cloaked before becoming visible. One 167 ms Fluent content entrance replaces incidental window resizing, and respects the Windows animation preference. The default theme observes Windows app-color changes while retaining WinUI's system accent palette. Refresh no longer dims the entire panel. See [appearance and motion verification](winui/UI-POLISH.md).
 
 The tray uses one coherent surface, bordered 14 DIP numeric fields and a More menu containing the power command. Inside the panel, wheel input changes brightness only over sliders, retaining partial wheel movement until a complete step is reached. Dragging a slider sends throttled updates throughout the gesture.
 
@@ -53,13 +55,13 @@ The self-contained application is published to `winui/artifacts/win-x64/`. Node.
 
 ## Verification
 
-The **local 0.3.1 Windows x64 run passed 54 core tests, 11 settings pages, 44 simulated runtime assertions (including 20 automation regressions), 144 layout cases, 53 interaction/popup checks and 11 IPC groups**. Fourteen preview images were generated; UI fixtures made no hardware or user-settings writes. Real native-window activation verified dismissal, while gesture tokens, keyboard commands and anchor placement also use explicitly identified simulated requests. Physical tray clicks, Escape and end-to-end wheel routing remain unverified.
+The **local 0.3.2 Windows x64 run passed 54 core tests, 11 settings pages, 44 simulated runtime assertions (including 20 automation regressions), 144 layout cases, 59 interaction/popup checks and 11 IPC groups**. Fourteen preview images were generated; UI fixtures made no hardware or user-settings writes. Native checks cover border/theme attributes, retained system accent, settled reveal bounds, animation completion/cancellation, Acrylic selection and unchanged refresh opacity. The shared-desktop run used a real test-start click before the suite; native foreground transfer and dismissal still had to pass. Physical tray clicks, Escape and end-to-end wheel routing remain unverified. Content PNGs do not show DWM shadows, Acrylic or motion.
 
 The original panel was compared against its source; an installed upstream panel was not inspected live. Actual high-contrast and separate Windows DPI sessions remain untested. Local evidence is recorded in [UI verification](winui/UI-POLISH.md), CI results are listed separately in [Actions](https://github.com/BK927/twinkle-tray-native/actions), and [physical-device results](winui/VERIFICATION.md) preserve the 0.2.1 tests.
 
 ## 한국어
 
-**Twinkle Tray Native**는 원본 Twinkle Tray의 트레이 사용 방식과 모니터 설정을 유지하면서 C#과 WinUI 3로 옮긴 Windows x64용 커뮤니티 포크입니다. 현재 개발 버전은 **0.3.1**입니다. 위 방법으로 x64 앱을 빌드하거나 릴리스 페이지의 게시된 패키지 및 성공한 Actions 실행의 산출물을 확인하세요. macOS·Apple 하드웨어·ARM64 실행은 현재 지원 범위에 포함하지 않습니다.
+**Twinkle Tray Native**는 원본 Twinkle Tray의 트레이 사용 방식과 모니터 설정을 유지하면서 C#과 WinUI 3로 옮긴 Windows x64용 커뮤니티 포크입니다. 현재 개발 버전은 **0.3.2**입니다. 위 방법으로 x64 앱을 빌드하거나 릴리스 페이지의 게시된 패키지 및 성공한 Actions 실행의 산출물을 확인하세요. macOS·Apple 하드웨어·ARM64 실행은 현재 지원 범위에 포함하지 않습니다.
 
 0.2.x에서 처음 전환할 때는 기존 앱을 종료하고 새 빌드를 수동으로 설치하세요. 기존 설정 경로와 파일 형식은 유지합니다. 사용법과 검증 범위는 [한국어 안내](winui/README.md)에 정리했습니다.
 

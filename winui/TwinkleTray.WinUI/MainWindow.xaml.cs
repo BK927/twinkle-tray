@@ -49,7 +49,8 @@ public sealed partial class MainWindow : Window
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico"));
         var presenter = (OverlappedPresenter)AppWindow.Presenter;
-        presenter.SetBorderAndTitleBar(false, false);
+        // Retain the system non-client border so DWM owns the edge, shadow and corners.
+        presenter.SetBorderAndTitleBar(true, false);
         presenter.IsResizable = false;
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
@@ -60,7 +61,7 @@ public sealed partial class MainWindow : Window
         Root.Loaded += (_, _) => QueueLayout();
         Root.SizeChanged += (_, _) => QueueLayout();
         PanelBody.SizeChanged += (_, _) => QueueLayout();
-        Root.ActualThemeChanged += (_, _) => ApplyBackdrop();
+        Root.ActualThemeChanged += (_, _) => { ApplyBackdrop(); ApplyNativeFrameTheme(); };
         ErrorBar.Closed += (_, _) => QueueLayout();
         try { _accessibility.HighContrastChanged += AccessibilityChanged; _accessibilitySubscribed = true; }
         catch (COMException) { /* Some unpackaged environments cannot register accessibility notifications. */ }
@@ -75,6 +76,7 @@ public sealed partial class MainWindow : Window
         Activated += Panel_Activated;
         AppWindow.Closing += (_, args) => { if (!_closing) { args.Cancel = true; HidePanel(); } };
         _debounce.Tick += async (_, _) => await FlushAsync();
+        InitializeSystemAppearance();
         ApplySettings();
     }
 
@@ -82,7 +84,7 @@ public sealed partial class MainWindow : Window
     {
         try { Root.Language = CultureInfo.GetCultureInfo(LocalizationService.CurrentLanguage).Name; }
         catch (CultureNotFoundException) { Root.Language = "en"; }
-        Root.RequestedTheme = _controller.Settings.Theme switch { "dark" => ElementTheme.Dark, "light" => ElementTheme.Light, _ => ElementTheme.Default };
+        ApplySystemAppearance();
         _debounce.Interval = TimeSpan.FromMilliseconds(_controller.Settings.UpdateIntervalMilliseconds);
         ApplyBackdrop();
         int corner = _controller.Settings.WindowsStyle == "win10" ? 1 : 2;
@@ -533,9 +535,11 @@ public sealed partial class MainWindow : Window
     private void ApplyRefreshingState()
     {
         foreach (var (control, enabled) in _controlAvailability) control.IsEnabled = enabled && !_refreshing;
-        MonitorList.Opacity = _refreshing ? .35 : 1;
+        // Disabled native controls already communicate busy state. Dimming the
+        // whole list on every tray activation made the panel visibly flash.
+        MonitorList.Opacity = 1;
         RefreshProgress.IsActive = _refreshing;
-        RefreshProgress.Visibility = _refreshing ? Visibility.Visible : Visibility.Collapsed;
+        RefreshProgress.Opacity = _refreshing ? 1 : 0;
         RefreshMenuItem.IsEnabled = !_refreshing;
         RefreshMoreMenuItem.IsEnabled = !_refreshing;
         UpdateToolbar(_controller.VisibleMonitors.ToList());
@@ -555,7 +559,7 @@ public sealed partial class MainWindow : Window
         if (_flushing || _pending.Count > 0 || _pendingFeatures.Count > 0) throw new TimeoutException("The tray input queue did not complete.");
     }
 
-    internal void CloseForExit() { _closing = true; _debounce.Stop(); _popupFocusWatch.Stop(); _controller.SetTrayPanelVisible(false); Close(); }
+    internal void CloseForExit() { CancelPanelPresentation(); _closing = true; _debounce.Stop(); _popupFocusWatch.Stop(); _controller.SetTrayPanelVisible(false); Close(); }
     private void Link_Click(object sender, RoutedEventArgs e) { _controller.Settings.LinkedBrightness = LinkButton.IsChecked == true; _controller.SaveSettings(); }
     private async void Power_Click(object sender, RoutedEventArgs e) => await _controller.PowerOffAsync("all");
     private void Settings_Click(object sender, RoutedEventArgs e) => _controller.OpenSettings();

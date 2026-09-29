@@ -1,6 +1,22 @@
 # Twinkle Tray Native: UI layout and verification
 
-Twinkle Tray Native retains the upstream navigation order, monitor controls and settings format. Version 0.3.1 refines the flyout surface and window/input lifecycle. The local Windows x64 run passed 54 core tests and the native GUI/runtime/UI/IPC suite described below. Earlier runs remain historical evidence. Local reports are distinct from the version-specific results in [GitHub Actions](https://github.com/BK927/twinkle-tray-native/actions) and packages in [releases](https://github.com/BK927/twinkle-tray-native/releases).
+## 0.3.2 system appearance and entrance
+
+- The flyout retains a native border without a title bar so DWM can supply its normal border, shadow and rounding. The previous XAML-drawn rectangular outline is removed. The native frame follows light/dark content; the system chooses its border color.
+- System mode resolves the Windows app theme and listens for `UISettings.ColorValuesChanged`; explicit Light/Dark overrides remain available. Standard WinUI controls retain the system accent palette. Desktop Acrylic remains the transient backdrop, with the OS controlling transparency and accessibility fallbacks.
+- Initial monitor discovery completes before the first startup panel. Opening lays out a DWM-cloaked window, waits for stable arranged bounds, and reveals it once. Activation is requested within the initiating call and keyboard focus waits until preparation completes. A cancelled opening cannot reveal itself later. Generic DWM transitions are disabled to avoid combining two motion effects.
+- A 167 ms Fast Out / Slow In content entrance moves 8 DIP and fades in. It is omitted when Windows disables animations or high contrast is active. It does not scale or stretch the native window and does not claim to reproduce a private Windows Shell animation.
+- Refresh leaves monitor-name opacity intact and reserves space for its progress indicator. Native controls still show their disabled state.
+
+The 0.3.2 Windows x64 run passed **54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases, 59 interaction/popup checks and 11 IPC groups**, with 14 previews and zero hardware/user-settings writes. It completed at **2026-09-29 11:48:09.5517957 UTC**; evidence is in `artifacts/test-results/20260929T114458986-058f34149d9940bb9298062a9099fe10/`. Native checks passed for border/theme attributes, actual cloak release and stable bounds, animation completion, cancellation, system accent retention and Acrylic selection. The native probe gained foreground at 8ms and the flyout was observed hidden at 42ms. The ZIP and unsigned MSIX contain the exact tested executable and three managed DLLs, checked by SHA-256.
+
+XAML preview PNGs capture content only: DWM borders, shadows, desktop Acrylic and motion require separate visual observation. Changing the actual Windows theme, accent or animation preference is outside this isolated run. Representative dark two-display, linked and light multi-display content previews were reviewed; this is not an assessment of animation smoothness or live system-frame appearance.
+
+Implementation guidance: [Windows theming](https://learn.microsoft.com/en-us/windows/apps/develop/ui/theming), [Acrylic for transient surfaces](https://learn.microsoft.com/en-us/windows/apps/design/style/acrylic), [Fluent timing](https://learn.microsoft.com/en-us/windows/apps/design/motion/timing-and-easing), [DWM attributes](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute).
+
+On a shared desktop Windows may deny a background test process's foreground request. An unchanged 0.3.1 binary and the initial 0.3.2 runs both reproduced that denial with the same external foreground window. For an interactive rerun, set `TWINKLETRAY_SMOKE_INTERACTIVE=1` in the test process environment, run `test-app.ps1`, and click **Start focus checks** in the uniquely titled **Twinkle Tray Native — focus test ready** window when it appears. The optional gate times out after 60 seconds and exists only in isolated smoke mode. The foreground/dismissal assertions remain unchanged and must still observe actual native focus. No foreground-lock setting or input-queue workaround is used. The gate remains open during the checks and is closed in cleanup.
+
+Twinkle Tray Native retains the upstream navigation order, monitor controls and settings format. Earlier runs below remain historical evidence. Local reports are distinct from the version-specific results in [GitHub Actions](https://github.com/BK927/twinkle-tray-native/actions) and packages in [releases](https://github.com/BK927/twinkle-tray-native/releases).
 
 ## Layout and interaction
 

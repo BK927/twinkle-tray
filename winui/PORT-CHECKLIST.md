@@ -1,4 +1,4 @@
-# Twinkle Tray Native 0.3.1: source audit and validation checklist
+# Twinkle Tray Native 0.3.2: source audit and validation checklist
 
 This is a feature audit, not a claim that every monitor or Windows configuration has been tested. The reference is upstream commit [`e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e`](https://github.com/xanderfrangos/twinkle-tray/tree/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e). Electron sources are preserved alongside the native implementation.
 
@@ -6,7 +6,11 @@ Twinkle Tray Native is maintained at [BK927/twinkle-tray-native](https://github.
 
 **한국어:** 원본의 사용자 기능을 기준으로 이식 범위와 검증 범위를 구분했습니다. `Implemented`는 코드가 있다는 뜻이며 실제 장치 검증을 뜻하지 않습니다. 아래 차이점과 미검증 항목이 남아 있으므로 픽셀 단위 동일성이나 모든 하드웨어에서의 완전한 동작을 보장하는 표가 아닙니다.
 
-**Verification scope:** The local **0.3.1 Windows x64 run passed 54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases, 53 UI checks and 11 IPC groups**. Input simulation and real native-event coverage are distinguished below. The passing 0.3.0 and 0.2.2 UI runs, and 0.2.1 physical-device results, are preserved as historical evidence. Local records are separate from commit-specific [Actions results](https://github.com/BK927/twinkle-tray-native/actions) and [published releases](https://github.com/BK927/twinkle-tray-native/releases).
+**Verification scope:** The local **0.3.2 Windows x64 run passed 54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases, 59 UI checks and 11 IPC groups**. Input simulation and real native-event coverage are distinguished below. Previous UI runs and 0.2.1 physical-device results are preserved as historical evidence. Local records are separate from commit-specific [Actions results](https://github.com/BK927/twinkle-tray-native/actions) and [published releases](https://github.com/BK927/twinkle-tray-native/releases).
+
+## 0.3.2 appearance and motion
+
+The panel retains the system non-client border and theme-aware frame, observes Windows app colors, and uses the WinUI accent palette. Its bounds settle while cloaked before a 167ms content entrance; current animation/accessibility preferences govern the effect. Refresh no longer dims the whole monitor list. Six additional native checks cover frame/theme/accent, Acrylic selection, reveal geometry, animation completion/cancellation and refresh opacity. The shared-desktop run began with a real click in an isolated test window. Foreground transfer to a native probe and panel dismissal passed at 8ms/42ms. XAML captures exclude the DWM frame/backdrop and motion, so they do not establish perceptual smoothness. Actual OS theme/accent toggling was not performed. See [UI-POLISH.md](UI-POLISH.md) for the completed 0.3.2 run and retained earlier evidence.
 
 ## 0.3.1 flyout and input changes
 

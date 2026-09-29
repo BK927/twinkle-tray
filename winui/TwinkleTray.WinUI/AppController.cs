@@ -64,8 +64,8 @@ internal sealed partial class AppController
         _hotplug.Tick += async (_, _) => { _hotplug.Stop(); await RefreshAsync(); if (_restoreAfterRefresh) { _restoreAfterRefresh = false; await RestoreSavedLevelsAsync(); } };
         _timer.Tick += async (_, _) => await TickAsync();
         if (!IsDemo) RegisterHotkeys();
-        if (!Program.Options.Background) _window.ShowPanel();
         await RefreshAsync();
+        if (!Program.Options.Background) _window.ShowPanel();
         ConfigureIntegrations();
         if (!IsDemo && Settings.RestoreBrightnessAtStartup) await RestoreSavedLevelsAsync();
         if (!IsDemo && Settings.CheckScheduleAtStartup) await ApplyLevelsAsync(ScheduleEvaluator.GetCurrentLevels(Settings, DateTime.Now, VisibleMonitors.Select(m => m.Id)));
@@ -77,8 +77,10 @@ internal sealed partial class AppController
         {
             IReadOnlyList<string> runtimeChecks = [];
             int settingsPages = 0, uiLayoutCases = 0;
+            Window? interactiveStart = null;
             try
             {
+                interactiveStart = await StartInteractiveFocusVerificationAsync();
                 Settings.Schedule.Add(new ScheduleEntry { Enabled = false, Time = "20:00", Brightness = 40 });
                 Settings.Hotkeys.Add(new HotkeyBinding { Enabled = false });
                 Settings.Monitors["demo:external"] = new MonitorSettings { ShowContrast = true };
@@ -99,7 +101,7 @@ internal sealed partial class AppController
                 }
                 catch (Exception reportException) { Program.Log(reportException); }
             }
-            finally { Quit(); }
+            finally { interactiveStart?.Close(); Quit(); }
         }
     }
 

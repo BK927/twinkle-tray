@@ -14,6 +14,7 @@ namespace TwinkleTray.WinUI;
 
 internal sealed partial class AppController
 {
+    private bool _interactiveSmokeStarted;
     private async Task VerifyFlyoutLifecycleAsync(UiVerificationResult result, string previews)
     {
         if (!(IsSmokeTest && IsDemo)) throw new InvalidOperationException("Flyout lifecycle checks require isolated demo smoke-test mode.");
@@ -64,6 +65,49 @@ internal sealed partial class AppController
             var pointer = new TrayActivation(anchor, false, 0);
             _window.ShowPanel(keyboard);
             await UiVisualVerification.WaitLoadedAsync(root);
+            await _window.WaitForPresentationForVerificationAsync();
+
+            nint appearanceHwnd = WinRT.Interop.WindowNative.GetWindowHandle(_window);
+            var revealed = _window.RevealedBounds;
+            FlyoutTestDwmGetWindowAttribute(appearanceHwnd, 14, out int cloaked, sizeof(int));
+            await Task.Delay(220);
+            var settledBounds = new RectInt32(_window.AppWindow.Position.X, _window.AppWindow.Position.Y, _window.AppWindow.Size.Width, _window.AppWindow.Size.Height);
+            result.Checks.Add(new("The first visible frame uses settled bounds and releases its preparation cloak", _window.LastCloakSucceeded && _window.LastPresentationSettled && cloaked == 0 && revealed.Equals(settledBounds),
+                $"Cloak available={_window.LastCloakSucceeded}; layout settled={_window.LastPresentationSettled}; cloak after reveal={cloaked}; revealed={revealed}; after entrance={settledBounds}. Actual DWM state and window bounds; not a screen-video smoothness judgment."));
+            var systemUi = new Windows.UI.ViewManagement.UISettings();
+            bool expectedAnimation = systemUi.AnimationsEnabled && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
+            result.Checks.Add(new("The Fluent entrance completes and respects the current Windows motion preference", _window.LastEntranceAnimated == expectedAnimation && !_window.EntranceRunning,
+                $"System animations={systemUi.AnimationsEnabled}; entrance animated={_window.LastEntranceAnimated}; running after 220ms={_window.EntranceRunning}. Current preference observed; Windows settings were not changed."));
+            var presenter = (OverlappedPresenter)_window.AppWindow.Presenter;
+            bool hasNativeBorder = presenter.HasBorder && !presenter.HasTitleBar;
+            var systemBackground = systemUi.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
+            var expectedSystemTheme = 5 * systemBackground.G + 2 * systemBackground.R + systemBackground.B >= 8 * 128 ? ElementTheme.Light : ElementTheme.Dark;
+            Settings.Theme = "dark"; _window.RefreshAppearanceForVerification();
+            await UiVisualVerification.SettleAsync(root);
+            bool darkWorks = root.ActualTheme == ElementTheme.Dark;
+            FlyoutTestDwmGetWindowAttribute(appearanceHwnd, 20, out int darkFrame, sizeof(int));
+            Settings.Theme = "light"; _window.RefreshAppearanceForVerification();
+            await UiVisualVerification.SettleAsync(root);
+            bool lightWorks = root.ActualTheme == ElementTheme.Light;
+            FlyoutTestDwmGetWindowAttribute(appearanceHwnd, 20, out int lightFrame, sizeof(int));
+            Settings.Theme = "system"; _window.RefreshAppearanceForVerification();
+            await UiVisualVerification.SettleAsync(root);
+            bool systemWorks = root.ActualTheme == expectedSystemTheme;
+            var accent = (Windows.UI.Color)Application.Current.Resources["SystemAccentColor"];
+            bool accentMatches = accent.Equals(systemUi.GetColorValue(Windows.UI.ViewManagement.UIColorType.Accent));
+            result.Checks.Add(new("Content and native frame follow light, dark and current Windows theme while retaining the system accent", hasNativeBorder && darkWorks && darkFrame == 1 && lightWorks && lightFrame == 0 && systemWorks && accentMatches,
+                $"Native border without title={hasNativeBorder}; dark content/frame={darkWorks}/{darkFrame}; light={lightWorks}/{lightFrame}; system={systemWorks}/{expectedSystemTheme}; accent matches UISettings={accentMatches}. App overrides exercised; OS theme/accent not changed."));
+            Settings.UseAcrylic = true; _window.RefreshAppearanceForVerification();
+            bool acrylicExpected = Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported() && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
+            result.Checks.Add(new("The tray uses desktop Acrylic with a solid fallback", acrylicExpected ? _window.SystemBackdrop is DesktopAcrylicBackdrop && ((UIElement)root.FindName("SolidBackground")).Visibility == Visibility.Collapsed : _window.SystemBackdrop is null,
+                $"Acrylic supported/expected={acrylicExpected}; backdrop={_window.SystemBackdrop?.GetType().Name}; OS controls final transparency. XAML bitmap previews exclude the compositor backdrop and native frame."));
+            Settings.Theme = "light"; Settings.UseAcrylic = false; _window.RefreshAppearanceForVerification();
+            _window.HidePanel(); _window.ShowPanel(keyboard); _window.HidePanel();
+            await _window.WaitForPresentationForVerificationAsync();
+            result.Checks.Add(new("Dismissing during preparation cannot reveal a stale flyout", !_window.IsShown && !_window.EntranceRunning,
+                "Show then immediate Hide uses the real asynchronous presentation path; cancelled request must remain hidden."));
+            _window.ShowPanel(keyboard);
+            await _window.WaitForPresentationForVerificationAsync();
 
             T Element<T>(string id) where T : FrameworkElement => UiVisualVerification.AuthoredElements(root).OfType<T>()
                 .Single(element => AutomationProperties.GetAutomationId(element) == id);
@@ -91,10 +135,13 @@ internal sealed partial class AppController
             _window.HidePanel(); _window.ShowPanel(keyboard); _window.SetRefreshing(true);
             await Task.Delay(100);
             bool disabledDuringRefresh = !enabledSlider.IsEnabled;
+            bool brightnessListRetainsOpacity = ((UIElement)root.FindName("MonitorList")).Opacity == 1;
             _window.SetRefreshing(false);
             bool refreshFocusRestored = await WaitUntilAsync(() => HasFocus(enabledSlider));
             result.Checks.Add(new("Opening focus waits for an immediate refresh and restores the enabled brightness control", disabledDuringRefresh && refreshFocusRestored && enabledSlider.IsEnabled,
                 $"Disabled during refresh={disabledDuringRefresh}; brightness focus restored={refreshFocusRestored}; enabled after refresh={enabledSlider.IsEnabled}. Production ShowPanel + synchronous SetRefreshing sequence; demo controls only."));
+            result.Checks.Add(new("Display refresh preserves list opacity instead of flashing the whole panel", brightnessListRetainsOpacity && ((UIElement)root.FindName("MonitorList")).Opacity == 1,
+                "Native controls retain their own disabled states; only the dedicated progress indicator changes visibility through opacity."));
 
             var editor = Element<TextBox>("brightness:ui-flyout:1:value");
             bool editorFocused = editor.Focus(FocusState.Keyboard);
@@ -162,7 +209,7 @@ internal sealed partial class AppController
                 _window.Activated -= PanelActivated;
             }
             result.Checks.Add(new("Activating another native window dismisses the demo flyout", lightDismissed,
-                $"Panel HWND=0x{panelHwnd.ToInt64():X}; probe HWND=0x{probeHwnd.ToInt64():X}; final foreground=0x{FlyoutTestGetForegroundWindow().ToInt64():X}; panel initially foreground={panelWasForeground}; probe Activated observed={probeActivated}; panel Deactivated observed={panelDeactivated}; probe foreground observed={probeForegroundObserved}; SetForegroundWindow returned={foregroundRequestAccepted}; panel shown={_window.IsShown}. Trace: {string.Join(" | ", activationTrace)}. Real own-window activation/foreground APIs; no simulated deactivation or external mouse input."));
+                $"Panel HWND=0x{panelHwnd.ToInt64():X}; probe HWND=0x{probeHwnd.ToInt64():X}; final foreground=0x{FlyoutTestGetForegroundWindow().ToInt64():X}; panel initially foreground={panelWasForeground}; probe Activated observed={probeActivated}; panel Deactivated observed={panelDeactivated}; probe foreground observed={probeForegroundObserved}; SetForegroundWindow returned={foregroundRequestAccepted}; panel shown={_window.IsShown}; interactive test-start window={_interactiveSmokeStarted}. Trace: {string.Join(" | ", activationTrace)}. Real own-window activation/foreground APIs; no simulated deactivation. Optional test-start input precedes the checks; dismissal itself uses the native probe, without external mouse input."));
             bool dismissedBeforeReopen = !_window.IsShown;
             var reopenWatch = Stopwatch.StartNew();
             _window.TogglePanel(pointer);
@@ -264,8 +311,36 @@ internal sealed partial class AppController
         }
     }
 
+    private async Task<Window?> StartInteractiveFocusVerificationAsync()
+    {
+        // Opt-in for a shared desktop where Windows correctly denies background
+        // focus stealing. A real click starts the suite; never bypass foreground
+        // protection or treat logical XAML activation as native foreground focus.
+        if (!(IsSmokeTest && IsDemo) || Environment.GetEnvironmentVariable("TWINKLETRAY_SMOKE_INTERACTIVE") != "1") return null;
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var start = new Button { Content = "Start focus checks", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var content = new Grid { Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 32, 32, 32)), RequestedTheme = ElementTheme.Dark };
+        content.Children.Add(start);
+        var window = new Window { Title = "Twinkle Tray Native — focus test ready", Content = content };
+        window.AppWindow.Resize(new SizeInt32(420, 160));
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        start.Click += (_, _) =>
+        {
+            if (FlyoutTestGetForegroundWindow() != hwnd) return;
+            start.IsEnabled = false;
+            start.Content = "Verifying simulated displays…";
+            _interactiveSmokeStarted = true;
+            ready.TrySetResult();
+        };
+        window.Closed += (_, _) => ready.TrySetException(new InvalidOperationException("Interactive focus verification was closed before it started."));
+        window.Activate();
+        try { await ready.Task.WaitAsync(TimeSpan.FromSeconds(60)); return window; }
+        catch { window.Close(); throw; }
+    }
+
     [StructLayout(LayoutKind.Sequential)] private struct FlyoutTestPoint { public int X, Y; }
     [DllImport("user32.dll", EntryPoint = "GetCursorPos")] private static extern bool FlyoutTestGetCursorPos(out FlyoutTestPoint point);
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")] private static extern nint FlyoutTestGetForegroundWindow();
+    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int FlyoutTestDwmGetWindowAttribute(nint window, int attribute, out int value, int size);
     [DllImport("user32.dll", EntryPoint = "SetForegroundWindow")] private static extern bool FlyoutTestSetForegroundWindow(nint hwnd);
 }
