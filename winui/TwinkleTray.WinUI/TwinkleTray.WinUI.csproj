@@ -20,7 +20,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <Description>Community WinUI 3 port of Twinkle Tray</Description>
   </PropertyGroup>
   <ItemGroup>
@@ -33,6 +33,7 @@
     <Content Include="../../src/assets/logo-512.png" Link="Assets/logo.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/assets/tray-icons/dark/fluent.ico" Link="Assets/tray-dark.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../src/assets/tray-icons/light/fluent.ico" Link="Assets/tray-light.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../src/assets/tray-icons/**/*.ico" Link="Assets/tray-icons/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../LICENSE" Link="LICENSE" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -93,4 +93,15 @@ internal static class NativeMethods
     [DllImport("dxva2.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool SetVCPFeature(PhysicalMonitorHandle monitor, byte code, uint value);
+
+    [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetMonitorCapabilities(PhysicalMonitorHandle monitor, out uint capabilities, out uint colorTemperatures);
+    [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetMonitorBrightness(PhysicalMonitorHandle monitor, out uint minimum, out uint current, out uint maximum);
+    [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetMonitorBrightness(PhysicalMonitorHandle monitor, uint value);
+    [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetMonitorContrast(PhysicalMonitorHandle monitor, out uint minimum, out uint current, out uint maximum);
+    [DllImport("dxva2.dll", SetLastError = true)] [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetMonitorContrast(PhysicalMonitorHandle monitor, uint value);
 }

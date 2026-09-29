@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 namespace TwinkleTray.Hardware;
 
 internal sealed record WmiDisplay(string InstanceName, string Name, byte Brightness, byte[] Levels, string? MethodPath);
-internal sealed record WmiInventory(Dictionary<string, WmiDisplay> BrightnessDisplays, Dictionary<string, string> Names);
+internal sealed record WmiInventory(Dictionary<string, WmiDisplay> BrightnessDisplays, Dictionary<string, string> Names, Dictionary<string, string> Serials);
 
 internal static class WmiProvider
 {
@@ -14,6 +14,7 @@ internal static class WmiProvider
     internal static WmiInventory Read(List<string> errors, CancellationToken cancellationToken)
     {
         var names = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var serials = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var methods = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var displays = new Dictionary<string, WmiDisplay>(StringComparer.OrdinalIgnoreCase);
         Query("WmiMonitorID", item =>
@@ -22,6 +23,8 @@ internal static class WmiProvider
                 ? new string(chars.TakeWhile(c => c != 0).Select(c => (char)c).ToArray()).Trim()
                 : "";
             names[Identity.Normalize(item["InstanceName"]?.ToString())] = name;
+            if (item["SerialNumberID"] is ushort[] serial)
+                serials[Identity.Normalize(item["InstanceName"]?.ToString())] = new string(serial.TakeWhile(c => c != 0).Select(c => (char)c).ToArray()).Trim();
         }, errors, cancellationToken);
         Query("WmiMonitorBrightnessMethods", item =>
         {
@@ -41,7 +44,7 @@ internal static class WmiProvider
                 names.GetValueOrDefault(key) is { Length: > 0 } name ? name : "Built-in display",
                 brightness, levels, methods.GetValueOrDefault(key));
         }, errors, cancellationToken);
-        return new WmiInventory(displays, names);
+        return new WmiInventory(displays, names, serials);
     }
 
     private static void Query(string className, Action<ManagementObject> read, List<string> errors,

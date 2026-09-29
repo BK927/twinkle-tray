@@ -10,6 +10,7 @@ namespace TwinkleTray.WinUI;
 
 internal static class Program
 {
+    internal static bool Logging { get; set; } = true;
     internal static CommandLineOptions Options { get; private set; } = new();
     internal static string PipeName => "TwinkleTray.WinUI." + WindowsIdentity.GetCurrent().User?.Value + "." + System.Diagnostics.Process.GetCurrentProcess().SessionId + (Options.Demo || Options.SmokeTest ? ".Demo" : "");
 
@@ -18,8 +19,10 @@ internal static class Program
     {
         try
         {
+            if (args.FirstOrDefault() == "--apply-update") return Services.UpdateService.ApplyStagedUpdate(args);
             Options = CommandLine.Parse(args);
             if (Options.Help) { WriteConsole(CommandLine.HelpText); return 0; }
+            if (Options.Udp) { WriteConsole(Services.UdpCommandClient.RunAsync(Options).GetAwaiter().GetResult()); return 0; }
             using var instance = new Mutex(true, @"Local\" + PipeName, out bool first);
             if (!first)
             {
@@ -33,12 +36,27 @@ internal static class Program
                 if (response is not null && !string.IsNullOrWhiteSpace(response.Message)) WriteConsole(response.Message);
                 return response?.Success == true ? 0 : 1;
             }
-            if ((Options.List || Options.HasMonitorCommand) && !Options.Panel && !Options.Overlay)
+            if ((Options.List || Options.UseTime || Options.HasMonitorCommand) && !Options.Panel && !Options.Overlay)
             {
-                var result = CliRunner.RunAsync(Options).GetAwaiter().GetResult();
-                WriteConsole(result); return 0;
+                var settings = Options.Demo || Options.List ? new AppSettings() : new SettingsStore().Load();
+                bool needsGammaOwner = Options.Vcp is null && (Options.HasMonitorCommand || Options.UseTime) && (settings.UseSoftwareBrightnessFallback || settings.Monitors.Values.Any(m => m.MainControl == "gamma" || m.SoftwareFallback || m.ExtendMinimum));
+                if (!needsGammaOwner)
+                {
+                    var result = CliRunner.RunAsync(Options).GetAwaiter().GetResult();
+                    WriteConsole(result); return 0;
+                }
+                Options = Options with { Background = true };
             }
             WinRT.ComWrappersSupport.InitializeComWrappers();
+            if (!Options.HasCommand && Services.StartupService.IsPackaged)
+            {
+                try
+                {
+                    if (Microsoft.Windows.AppLifecycle.AppInstance.GetCurrent().GetActivatedEventArgs().Kind == Microsoft.Windows.AppLifecycle.ExtendedActivationKind.StartupTask)
+                        Options = Options with { Background = true };
+                }
+                catch (Exception exception) { Log(exception); }
+            }
             Application.Start(initialization =>
             {
                 SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
@@ -54,6 +72,7 @@ internal static class Program
 
     internal static void Log(Exception exception)
     {
+        if (!Logging) return;
         try
         {
             string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TwinkleTray.WinUI");

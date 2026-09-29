@@ -91,9 +91,9 @@ try {
     Assert-Test (Test-Path -LiteralPath $smokePath -PathType Leaf) 'The application did not write smoke-test.json.'
     Assert-Test ((Get-Item -LiteralPath $smokePath).LastWriteTimeUtc -ge $smokeStarted) 'The smoke-test report is stale.'
     $smoke = Get-Content -Raw -LiteralPath $smokePath | ConvertFrom-Json
-    Assert-Test ($smoke.Passed -and $smoke.NativeWinUI -and $smoke.SettingsWindow -and $smoke.DemoDisplays -eq 2 -and $smoke.SettingsPages -eq 6 -and $smoke.HardwareWrites -eq 0) 'The smoke report must confirm two demo displays, six settings pages, and zero hardware writes.'
+    Assert-Test ($smoke.Passed -and $smoke.NativeWinUI -and $smoke.SettingsWindow -and $smoke.DemoDisplays -eq 2 -and $smoke.SettingsPages -eq 11 -and $smoke.RuntimeChecks.Count -ge 9 -and $smoke.HardwareWrites -eq 0) 'The smoke report must confirm two demo displays, eleven settings pages, runtime checks, and zero hardware writes.'
     Copy-Item -LiteralPath $smokePath -Destination (Join-Path $runDirectory 'smoke-test.json')
-    $passedChecks.Add('Native startup, two demo displays, and six settings pages')
+    $passedChecks.Add('Native startup, two demo displays, eleven settings pages, and runtime controls')
 
     $demo = Start-TestProcess -Name 'demo-server' -Arguments @('--demo', '--background')
     $readyDeadline = [DateTime]::UtcNow.AddSeconds(10)
@@ -130,12 +130,21 @@ try {
     Assert-Test ($help.ExitCode -eq 0 -and $help.Output.Contains('--MonitorNum') -and $help.Output.Contains('--Set')) 'The help command did not return the expected usage text.'
     $passedChecks.Add('Help returns usage and exit code zero')
 
+    $time = Invoke-TestCommand -Name 'schedule' -Arguments @('--demo', '--UseTime')
+    Assert-Test ($time.Output -eq 'OK') 'UseTime did not acknowledge current schedule evaluation.'
+    $passedChecks.Add('IPC schedule evaluation')
+
+    $overlay = Invoke-TestCommand -Name 'overlay' -Arguments @('--demo', '--All', '--Set=50', '--Overlay')
+    Assert-Test ($overlay.Output -eq 'OK') 'The dedicated brightness overlay command failed.'
+    $passedChecks.Add('Dedicated native OSD and brightness update')
+
     [ordered]@{
         Passed = $true
         Application = $application
         CompletedUtc = [DateTime]::UtcNow.ToString('O')
         SimulatedMonitors = 2
-        SettingsPages = 6
+        SettingsPages = $smoke.SettingsPages
+        RuntimeChecks = $smoke.RuntimeChecks
         HardwareWrites = 0
         Checks = $passedChecks.ToArray()
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runDirectory 'integration-test.json') -Encoding utf8

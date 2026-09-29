@@ -16,6 +16,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="40" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <Grid x:Name="TitleBar" Background="Transparent">
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,0,0" VerticalAlignment="Center">
@@ -34,12 +35,27 @@
                 <NavigationViewItem x:Name="MonitorsNavigation" Tag="monitors" Content="Monitor Settings">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE7F4;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem x:Name="FeaturesNavigation" Tag="features" Content="DDC/CI Features">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9E9;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="TimeNavigation" Tag="time" Content="Time Adjustments" Icon="Clock" />
                 <NavigationViewItem x:Name="HotkeysNavigation" Tag="hotkeys" Content="Hotkeys &amp; Shortcuts">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE765;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="IdleNavigation" Tag="idle" Content="Idle Detection">
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE708;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="ProfilesNavigation" Tag="profiles" Content="Profiles">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7C3;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="SensorsNavigation" Tag="sensors" Content="Light Sensor">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE706;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="AdvancedNavigation" Tag="advanced" Content="Advanced">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="UpdatesNavigation" Tag="updates" Content="Updates">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE895;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
@@ -52,6 +68,7 @@
                             HorizontalAlignment="Stretch" />
             </ScrollViewer>
         </NavigationView>
+        <InfoBar x:Name="StatusBar" Grid.Row="2" IsOpen="False" IsClosable="True" Severity="Informational" Margin="16,0,16,12" />
         <InfoBar x:Name="SettingsError" Grid.Row="1" IsOpen="False" IsClosable="True"
                  Severity="Error" VerticalAlignment="Bottom" Margin="260,0,16,16" />
     </Grid>

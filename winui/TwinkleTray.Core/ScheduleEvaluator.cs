@@ -18,7 +18,7 @@ public static class ScheduleEvaluator
         var due = new List<(ScheduleEntry Entry, DateTime At)>();
         foreach (var entry in entries)
         {
-            if (entry is null || !entry.Enabled || entry.Brightness is < 0 or > 100 ||
+            if (entry is null || !entry.Enabled || entry.Event != "time" || entry.Brightness is < 0 or > 100 ||
                 !TimeOnly.TryParseExact(entry.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
                 continue;
 
@@ -35,5 +35,83 @@ public static class ScheduleEvaluator
         }
 
         return due.OrderBy(item => item.At).Select(item => item.Entry).ToArray();
+    }
+
+    /// <summary>Solar-aware daily schedule; applies each entry at most once after a long pause.</summary>
+    public static IReadOnlyList<ScheduleEntry> GetDue(AppSettings settings, DateTime previous, DateTime now, TimeZoneInfo? zone = null)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (now <= previous) return Array.Empty<ScheduleEntry>();
+        return Occurrences(settings, now, zone).Where(item => item.At > previous && item.At <= now)
+            .GroupBy(item => item.Entry).Select(group => group.MaxBy(item => item.At)!)
+            .OrderBy(item => item.At).Select(item => item.Entry).ToArray();
+    }
+
+    public static DateTime? GetOccurrence(ScheduleEntry entry, DateTime date, double latitude = 0, double longitude = 0, TimeZoneInfo? zone = null)
+    {
+        if (entry is null || !entry.Enabled || entry.Brightness is < 0 or > 100) return null;
+        DateTime? time;
+        if (string.Equals(entry.Event, "time", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TimeOnly.TryParseExact(entry.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)) return null;
+            time = date.Date.Add(parsed.ToTimeSpan());
+            // A skipped wall-clock time during the spring DST jump has no occurrence.
+            if ((zone ?? TimeZoneInfo.Local).IsInvalidTime(DateTime.SpecifyKind(time.Value, DateTimeKind.Unspecified))) return null;
+        }
+        else time = SolarCalculator.GetEvent(date, latitude, longitude, entry.Event, zone);
+        if (time is null) return null;
+        try { return time.Value.AddMinutes(Math.Clamp(entry.OffsetMinutes, -1440, 1440)); }
+        catch (ArgumentOutOfRangeException) { return null; }
+    }
+
+    /// <summary>Latest level for each requested monitor, optionally interpolated to its next applicable event.</summary>
+    public static IReadOnlyDictionary<string, double> GetCurrentLevels(AppSettings settings, DateTime now, IEnumerable<string> monitorIds, TimeZoneInfo? zone = null)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(monitorIds);
+        var occurrences = Occurrences(settings, now, zone).OrderBy(item => item.At).ToArray();
+        var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var id in monitorIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var applicable = occurrences.Select(item => (item.At, Level: GetLevel(item.Entry, id))).Where(item => item.Level.HasValue).ToArray();
+            var previous = applicable.LastOrDefault(item => item.At <= now);
+            if (!previous.Level.HasValue) continue;
+            double level = previous.Level.Value;
+            if (settings.ScheduleInterpolation)
+            {
+                var next = applicable.FirstOrDefault(item => item.At > now);
+                if (next.Level.HasValue && next.At > previous.At)
+                    level = Interpolate(level, next.Level.Value, (now - previous.At).TotalSeconds / (next.At - previous.At).TotalSeconds);
+            }
+            result[id] = level;
+        }
+        return result;
+    }
+
+    public static double? GetLevel(ScheduleEntry entry, string monitorId)
+    {
+        if (entry.IndividualBrightness?.Count > 0)
+            return entry.IndividualBrightness.TryGetValue(monitorId, out var value) && value is >= 0 and <= 100 ? value : null;
+        return (entry.MonitorId == "all" || string.Equals(entry.MonitorId, monitorId, StringComparison.OrdinalIgnoreCase)) && entry.Brightness is >= 0 and <= 100
+            ? entry.Brightness : null;
+    }
+
+    public static double Interpolate(double start, double end, double progress) =>
+        start + (end - start) * (double.IsNaN(progress) ? 0 : Math.Clamp(progress, 0, 1));
+
+    private static IEnumerable<(ScheduleEntry Entry, DateTime At)> Occurrences(AppSettings settings, DateTime now, TimeZoneInfo? zone)
+    {
+        // Adjacent source dates cover offsets that cross midnight, interpolation and the previous daily event.
+        for (int delta = -2; delta <= 2; delta++)
+        {
+            DateTime date;
+            try { date = now.Date.AddDays(delta); }
+            catch (ArgumentOutOfRangeException) { continue; }
+            foreach (var entry in settings.Schedule ?? [])
+            {
+                var at = GetOccurrence(entry, date, settings.Latitude, settings.Longitude, zone);
+                if (at.HasValue) yield return (entry, at.Value);
+            }
+        }
     }
 }

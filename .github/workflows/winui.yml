@@ -64,6 +64,14 @@ jobs:
       - name: Publish self-contained application
         run: ./winui/build.ps1 -Architecture '${{ matrix.architecture }}' -SkipTests
 
+      - name: Run read-only hardware and environment diagnostics
+        if: matrix.architecture == 'x64'
+        working-directory: winui
+        run: dotnet run --project TwinkleTray.Hardware/Diagnostics --configuration Release -- --read-only
+
+      - name: Create portable ZIP and validate unsigned MSIX
+        run: ./winui/package.ps1 -Architecture '${{ matrix.architecture }}'
+
       - name: Optional GUI and IPC tests with simulated monitors
         if: github.event_name == 'workflow_dispatch' && inputs.run_gui_smoke && matrix.architecture == 'x64'
         run: |
@@ -87,6 +95,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: TwinkleTray-WinUI3-${{ matrix.architecture }}-${{ github.sha }}
-          path: winui/artifacts/win-*/**
+          path: winui/artifacts/packages/*
           if-no-files-found: error
           retention-days: 14

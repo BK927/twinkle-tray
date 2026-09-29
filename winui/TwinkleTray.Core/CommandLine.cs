@@ -15,12 +15,15 @@ public sealed record CommandLineOptions
     public VcpCommand? Vcp { get; init; }
     public bool Panel { get; init; }
     public bool Overlay { get; init; }
+    public bool Settings { get; init; }
+    public bool UseTime { get; init; }
+    public bool Udp { get; init; }
     public bool Demo { get; init; }
     public bool Background { get; init; }
     public bool SmokeTest { get; init; }
     public bool Help { get; init; }
     public bool HasMonitorCommand => Set.HasValue || Offset.HasValue || Vcp is not null;
-    public bool HasCommand => HasMonitorCommand || List || Panel || Overlay || Help;
+    public bool HasCommand => HasMonitorCommand || UseTime || List || Panel || Overlay || Settings || Help;
 }
 
 public static class CommandLine
@@ -34,9 +37,12 @@ public static class CommandLine
         --MonitorID=UID2353               Select by full or partial monitor ID
         --Set=95                         Set brightness (0–100)
         --Offset=-20                     Change brightness (-100–100)
+        --UseTime                        Apply the current time-adjustment schedule
         --VCP=0xD6:5                     Send a DDC/CI code (0–255) and value (0–65535)
+        --UDP                            Send the command over local UDP using saved port/key
         --Panel                          Show the brightness panel
-        --Overlay                        Show the panel (dedicated OSD not yet ported)
+        --settings                       Open the settings window
+        --Overlay                        Show the dedicated brightness OSD
         --background                     Start in the notification area
         --demo                           Use simulated monitors
         --smoke-test                     Verify application startup without hardware changes
@@ -71,6 +77,9 @@ public static class CommandLine
                 case "--all": RequireFlag(name, value); options = options with { All = true }; break;
                 case "--panel": RequireFlag(name, value); options = options with { Panel = true }; break;
                 case "--overlay": RequireFlag(name, value); options = options with { Overlay = true }; break;
+                case "--settings": RequireFlag(name, value); options = options with { Settings = true }; break;
+                case "--usetime": RequireFlag(name, value); options = options with { UseTime = true }; break;
+                case "--udp": RequireFlag(name, value); options = options with { Udp = true }; break;
                 case "--demo": RequireFlag(name, value); options = options with { Demo = true }; break;
                 case "--background": RequireFlag(name, value); options = options with { Background = true }; break;
                 case "--smoke-test": RequireFlag(name, value); options = options with { SmokeTest = true }; break;
@@ -98,6 +107,8 @@ public static class CommandLine
             throw new ArgumentException("Use only one of --All, --MonitorNum, or --MonitorID.", nameof(args));
         if (actions > 1)
             throw new ArgumentException("Use only one of --Set, --Offset, or --VCP.", nameof(args));
+        if (options.UseTime && (selectors > 0 || actions > 0 || options.List))
+            throw new ArgumentException("--UseTime cannot be combined with monitor selectors, brightness/VCP commands, or --List.", nameof(args));
         if (actions == 1 && selectors != 1)
             throw new ArgumentException("Brightness and VCP commands require --All, --MonitorNum, or --MonitorID.", nameof(args));
         if (selectors == 1 && actions != 1)
@@ -106,10 +117,16 @@ public static class CommandLine
             throw new ArgumentException("--List cannot be combined with a monitor command, --Panel, or --Overlay.", nameof(args));
         if (options.Panel && options.Overlay)
             throw new ArgumentException("Use only one of --Panel or --Overlay.", nameof(args));
+        if (options.Settings && (options.Panel || options.Overlay || options.List || options.HasMonitorCommand || options.UseTime || options.Udp || options.Background))
+            throw new ArgumentException("--settings cannot be combined with commands, other window modes, or --background.", nameof(args));
         if (options.Background && (options.Panel || options.Overlay))
             throw new ArgumentException("--background cannot be combined with --Panel or --Overlay.", nameof(args));
-        if (options.SmokeTest && actions > 0)
-            throw new ArgumentException("--smoke-test cannot be combined with a monitor command.", nameof(args));
+        if (options.SmokeTest && (actions > 0 || options.UseTime || options.Udp))
+            throw new ArgumentException("--smoke-test cannot be combined with a monitor command, --UseTime, or --UDP.", nameof(args));
+        if (options.Udp && !(options.List || options.HasMonitorCommand || options.UseTime))
+            throw new ArgumentException("--UDP requires --List, --UseTime, or a monitor command.", nameof(args));
+        if (options.Udp && options.Demo)
+            throw new ArgumentException("--demo cannot use --UDP, which connects to the real application's saved server settings.", nameof(args));
         return options;
     }
 

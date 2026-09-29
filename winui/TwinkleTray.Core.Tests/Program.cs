@@ -138,7 +138,8 @@ var tests = new (string Name, Action Run)[]
 };
 
 var failed = 0;
-foreach (var (name, run) in tests)
+var allTests = tests.Concat(ExtendedTests.All).ToArray();
+foreach (var (name, run) in allTests)
 {
     try
     {
@@ -151,7 +152,7 @@ foreach (var (name, run) in tests)
         Console.Error.WriteLine($"FAIL {name}: {error}");
     }
 }
-Console.WriteLine($"{tests.Length - failed}/{tests.Length} tests passed.");
+Console.WriteLine($"{allTests.Length - failed}/{allTests.Length} tests passed.");
 return failed == 0 ? 0 : 1;
 
 static void Equal<T>(T expected, T actual)

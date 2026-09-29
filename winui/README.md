@@ -1,147 +1,168 @@
-# Twinkle Tray · WinUI 3
+# Twinkle Tray · WinUI 3 · 0.2.0
 
-Twinkle Tray의 패널 구성과 동작을 최대한 유지하면서 C#과 WinUI 3로 다시 구현하는 커뮤니티 포크입니다. **현재는 초기 이식 버전이며 원본의 모든 기능을 제공하지 않습니다.** 원본 Electron 소스는 그대로 보관하고 네이티브 앱은 이 `winui/` 폴더에 분리했습니다.
+Twinkle Tray의 트레이 패널, 설정 구성과 주요 동작을 C#과 WinUI 3로 옮긴 커뮤니티 포크입니다. 밝기 조절뿐 아니라 고급 DDC/CI, HDR/감마, 시간 예약, 앱별 프로필, 조도 센서, 설정 가져오기와 업데이트 기능을 포함합니다. 원본 Electron 소스는 저장소에 보존하고 네이티브 앱은 `winui/`에 분리했습니다.
 
-A community C#/WinUI 3 port that preserves Twinkle Tray's panel layout and core behavior. **This is an initial implementation with incomplete upstream feature parity.** The original Electron application remains in the repository; the native application lives under `winui/`.
+**구현된 기능과 실제 장치에서 검증한 범위는 다릅니다.** WinUI 컨트롤을 사용하므로 원본과 픽셀 단위로 같지는 않습니다. 항목별 원본 대응, 차이점과 미검증 사항은 [이식 체크리스트](PORT-CHECKLIST.md), 하드웨어별 동작은 [Windows 백엔드 문서](TwinkleTray.Hardware/README.md)에 정리했습니다.
 
-- Fork: [BK927/twinkle-tray, `winui3` branch](https://github.com/BK927/twinkle-tray/tree/winui3)
-- Upstream: [xanderfrangos/twinkle-tray](https://github.com/xanderfrangos/twinkle-tray)
-- Upstream baseline: [`e3d5bb0`](https://github.com/xanderfrangos/twinkle-tray/commit/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e)
-- Original assets, translations, attribution, and [MIT license](../LICENSE) are retained.
+- 포크: [BK927/twinkle-tray · winui3](https://github.com/BK927/twinkle-tray/tree/winui3)
+- 원본: [xanderfrangos/twinkle-tray](https://github.com/xanderfrangos/twinkle-tray)
+- 이식 기준: [`e3d5bb0`](https://github.com/xanderfrangos/twinkle-tray/commit/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e)
+- 원본 이미지·아이콘·번역·저작권 표시와 [MIT 라이선스](../LICENSE)를 유지합니다. 태양 위치 계산의 별도 고지는 [ThirdPartyNotices.txt](TwinkleTray.Core/ThirdPartyNotices.txt)에 포함됩니다.
 
-## 빠른 시작 · Quick start
+## 빌드와 실행
 
-Windows 10 버전 2004(빌드 19041) 이상 또는 Windows 11이 필요합니다. 빌드에는 **.NET 10 SDK**와 NuGet 패키지를 내려받을 인터넷 연결이 필요합니다. 이 네이티브 앱의 빌드에 Node.js나 Electron은 사용하지 않습니다.
+Windows 10 버전 2004(빌드 19041) 이상 또는 Windows 11이 필요합니다. 빌드에는 **.NET 10 SDK**와 NuGet 패키지를 복원할 인터넷 연결이 필요하며, 네이티브 앱을 빌드할 때 Node.js나 Electron은 사용하지 않습니다. `global.json`은 안정 버전 .NET 10 SDK를 선택하고 설치된 SDK 파일은 수정하지 않습니다.
 
-Requires Windows 10 version 2004/build 19041 or later, including Windows 11. To build, install the **.NET 10 SDK** and allow NuGet package restore. Node.js and Electron are not required for the native build.
-
-`winui/global.json` selects a stable .NET 10 SDK with feature-band roll-forward, without changing any installed SDK files.
-
-Run from the repository root in PowerShell:
+저장소 루트에서 PowerShell로 실행하세요.
 
 ```powershell
-# Run the core tests and publish a Release x64 build.
+# 코어 테스트 후 x64 Release 빌드
 .\winui\build.ps1
 
-# Preview the panel with simulated monitors; no monitor settings are changed.
+# 실제 모니터를 변경하지 않는 데모
 .\winui\artifacts\win-x64\TwinkleTray.WinUI.exe --demo
 
-# Start the normal application.
+# 데모 설정 화면
+.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe --demo --settings
+
+# 일반 실행
 .\winui\artifacts\win-x64\TwinkleTray.WinUI.exe
-```
 
-빌드 결과는 `winui/artifacts/win-x64/`에 생성됩니다. 실행 파일, DLL, `Assets`, `Localization`을 포함한 **폴더 전체**를 함께 배포해야 합니다. .NET 및 Windows App SDK 런타임이 포함된 포터블 빌드이며 별도의 MSIX 설치 프로그램은 아직 없습니다.
-
-The complete portable build is in `winui/artifacts/win-x64/`. Keep the **entire folder** together: the executable depends on its accompanying DLLs, `Assets`, and `Localization` files. The publish output includes the .NET and Windows App SDK runtimes. An MSIX installer is not provided yet.
-
-```powershell
-# Cross-publish for Windows ARM64. Run this output on an ARM64 device.
-.\winui\build.ps1 -Architecture ARM64
-
-# Publish both architectures, running core tests once.
+# x64와 ARM64를 함께 빌드
 .\winui\build.ps1 -Architecture x64,ARM64
 ```
 
-ARM64 publishing is configured; ARM64 execution has not been verified on a physical device. For unsupported-display messages, enable DDC/CI in the monitor's on-screen menu and refresh the display list. Available controls depend on the monitor, connection, and driver.
+결과는 `winui/artifacts/win-x64/` 또는 `winui/artifacts/win-arm64/`에 생성됩니다. .NET과 Windows App SDK 런타임을 포함한 자체 포함 빌드입니다. 실행 파일만 복사하지 말고 **DLL, Assets, Localization을 포함한 폴더 전체**를 함께 옮기세요. ARM64 결과물은 ARM64 Windows에서 사용하며, 실제 ARM64 장치 실행은 아직 검증하지 않았습니다.
 
-ARM64 빌드 설정은 포함되어 있지만 실제 ARM64 장치 실행은 검증하지 않았습니다. 외부 모니터가 지원되지 않는 것으로 표시되면 모니터 메뉴에서 DDC/CI를 활성화하고 새로 고침을 누르세요. 사용 가능한 기능은 모니터·연결 방식·드라이버에 따라 다릅니다.
+## 구현된 기능
 
-## 기능 이식 현황 · Feature parity
-
-“구현 / Implemented”는 코드에 포함되었다는 뜻이며 모든 장치에서 동작을 검증했다는 뜻은 아닙니다.
-
-“Implemented” describes the current code, not a guarantee that every device has been tested.
-
-| Feature / 기능 | Current native implementation / 현재 상태 |
+| 범위 | 0.2.0 구현 |
 | --- | --- |
-| Tray and brightness panel / 트레이·밝기 패널 | Native tray icon, per-monitor sliders, linked levels, wheel adjustment, refresh, power button, and settings shortcut. Upstream layout and icons are reused where practical. |
-| Appearance / 외형 | System/light/dark themes, native WinUI controls and acrylic where supported. The layout is inspired by upstream; it is not a pixel-identical reproduction. |
-| External brightness / 외부 모니터 밝기 | DDC/CI implementation, device discovery, and normalized 0–100 controls. |
-| Built-in display / 내장 화면 | WMI brightness implementation, subject to driver support. |
-| Contrast and power / 대비·전원 | Contrast slider on compatible DDC/CI monitors; power-off through VCP `0xD6`. |
-| Per-monitor settings / 모니터별 설정 | Custom name, ordering, hiding, minimum/maximum brightness calibration, optional contrast slider. |
-| Scheduled adjustments / 시간별 밝기 | Daily local-time entries, per-monitor or all-visible-monitor targets. Upstream's advanced transition behavior is not reproduced. |
-| Hotkeys / 전역 단축키 | Brightness up/down and power-off with monitor targets; conflicts are reported. |
-| Idle dimming / 유휴 상태 | Dim after a configured idle interval and restore on activity. |
-| Startup / 시작 프로그램 | Optional current-user Windows startup entry using `--background`. |
-| Languages / 언어 | Reuses upstream translation files, with English fallbacks and Korean text for native-only settings. Some new messages remain English. |
-| Command line / 명령줄 | `--List`, `--All`, `--MonitorNum`, `--MonitorID`, `--Set`, `--Offset`, `--VCP`, and `--Panel`; commands reach the running instance through a current-user pipe. |
-| Overlay / 화면 표시 | `--Overlay` currently opens the regular panel. A dedicated upstream-style OSD is **not implemented**. |
-| Advanced DDC/CI / 고급 DDC/CI | Raw VCP commands are available. The complete upstream advanced-controls UI and device-specific behavior are **not ported**. |
-| HDR/SDR, gamma, ambient light / HDR·감마·조도 센서 | **Not ported / 미구현.** |
-| App profiles / 앱별 프로필 | **Not ported / 미구현.** |
-| Updates, Store/MSIX / 자동 업데이트·스토어 배포 | **Not ported / 미구현.** Current delivery is a portable directory. |
-| Upstream settings import / 원본 설정 가져오기 | **Not implemented / 미구현.** Native preferences use a separate file. |
+| 트레이·패널 | 모니터별 슬라이더, 밝기 연동, 휠 조절, 이름·순서·숨김, 새로 고침, 전원 제어, 시작 프로그램 등록 |
+| 외형 | 시스템·밝은·어두운 테마, Windows 10/11 스타일, 아크릴, 원본 트레이 아이콘, 별도의 밝기 OSD와 표시 시간·전체 화면 정책 |
+| 하드웨어 밝기 | 외부 모니터 DDC/CI, 내장 화면 WMI, Windows 고수준 API 대체 경로, Apple Studio Display HID |
+| 고급 DDC/CI | 지원 기능 조회, 대비·볼륨·음소거·입력·전원·색상·사용자 VCP, 기능별 범위·밝기 연동·표시 아이콘, 밝기 VCP 코드 재정의 |
+| 보정·HDR·감마 | 최소·최대 및 다중 지점 보정, HDR의 SDR 화이트 레벨, 감마 밝기, 하드웨어 제어가 없을 때 소프트웨어 대체, 하드웨어 최소 밝기 아래로 확장 |
+| 시간별 밝기 | 고정 시각, 모니터별 값, 일출·일몰 등 태양 위치 이벤트와 오프셋, 하루 일정 사이 보간, 부드러운 전환 |
+| 단축키 | 순서대로 실행하는 여러 동작, 설정·증감·순환·전원·프로필·새로 고침·패널·VCP, 전용 밝기 키, 모니터 선택과 연동 해제 |
+| 유휴·복원 | 분·초 단위 유휴 감지, 전체 화면·미디어 재생 예외, 지연 복원, 잠금 화면 억제, 절전 복귀·장치 변경 후 복원, 닫힌 노트북 화면 숨김 |
+| 앱별 프로필 | 실행 파일 경로에 따른 밝기·OSD 설정, 이전 밝기 복원, 트레이에서 수동 적용 |
+| 조도 센서 | Windows 센서, Yoctopuce 허브, 모의 센서, 모니터별 조도·밝기 범위 |
+| 외부 제어 | 명령줄, 사용자·세션별 단일 인스턴스와 파이프, 키 인증 UDP 서버·클라이언트 |
+| 설정·배포 | Electron 설정과 별도 known-displays 가져오기, ID 매핑, 내보내기·백업·초기화, 진단, 업데이트 확인·검증·설치, 포터블 ZIP·MSIX 패키징 |
 
-## 명령줄 · Command line
+모니터 기능은 연결 방식과 펌웨어에 따라 달라집니다. 지원되지 않는 외부 모니터는 모니터 자체 메뉴에서 DDC/CI를 켜고 새로 고침해 보세요. HDR/감마와 Apple HID의 조건, 감마 복원 방식은 [하드웨어 문서](TwinkleTray.Hardware/README.md)를 참고하세요. 실제 하드웨어 쓰기, 노트북·Apple 화면·조도 센서의 장치별 검증은 아래 검증 범위와 구분합니다.
+
+프로필 경로는 쉼표로 나눈 문자열을 대소문자 구분 없이 포함하는 실행 파일에 적용하며, 여러 프로필이 일치하면 마지막 활성 프로필을 선택합니다. 자동 제어 우선순위는 유휴 밝기, 실행 중인 앱의 프로필, 조도 센서, 시간 예약 순입니다. 부드러운 전환은 초 단위 지속 시간을 사용하므로 원본의 단계별 속도 설정을 가져올 때 근사 변환 사실을 표시합니다.
+
+## 명령줄
 
 ```powershell
 $app = '.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe'
 & $app --List
 & $app --MonitorNum=1 --Set=65
-& $app --MonitorID="UID2353" --Offset=-10 --Panel
+& $app --MonitorID="UID2353" --Offset=-10 --Overlay
 & $app --All --Set=50
+& $app --UseTime
 & $app --Panel
+& $app --settings
 & $app --background
 & $app --help
+
+# 설정 > 고급에서 UDP를 켜고 앱을 실행한 뒤 사용
+& $app --UDP --List
+& $app --UDP --All --Set=50
+& $app --UDP --UseTime
 ```
 
-밝기 또는 VCP 명령에는 모니터 선택자 하나와 동작 하나가 필요합니다. `--MonitorNum`은 1부터 시작하며 `--List`에 표시된 순서를 따릅니다. `--MonitorID`는 전체 ID 또는 하나의 모니터에만 일치하는 부분 문자열을 허용합니다. 애매한 선택이나 충돌하는 옵션은 오류로 처리합니다. 앱이 실행 중이면 해당 인스턴스에 명령을 전달합니다.
+밝기·VCP 명령에는 선택자 하나(`--All`, `--MonitorNum`, `--MonitorID`)와 동작 하나(`--Set`, `--Offset`, `--VCP`)가 필요합니다. 번호는 `--List`에 표시된 순서의 1부터 시작하며, ID는 전체 ID 또는 모니터 하나에만 일치하는 부분 문자열입니다. 목록은 JSON으로 출력하고 모호한 선택이나 잘못된 옵션은 오류로 반환합니다.
 
-A brightness or VCP command requires exactly one selector and one action. Monitor numbers are 1-based and follow `--List` order. IDs accept a full ID or an unambiguous partial match. Ambiguous selectors and conflicting arguments fail explicitly. A running instance receives the command; otherwise a standalone command runs and exits unless a panel is requested.
+`--UseTime`은 현재 시간 예약을 적용합니다. `--Overlay`는 별도 OSD를, `--settings`는 설정 창을 엽니다. 실행 중인 앱이 있으면 해당 인스턴스가 명령을 처리합니다. 소프트웨어 감마의 수명을 유지해야 하는 명령은 필요하면 앱을 알림 영역에 남깁니다.
 
-`--VCP=0x10:50` sends a **raw MCCS value**, not a calibrated brightness percentage. VCP support and value ranges are monitor-specific. The `--Set` and `--Offset` options use the configured brightness calibration instead.
+`--VCP=0x10:50`은 **MCCS 원시 값**이며 보정된 밝기 비율이 아닙니다. 일반 밝기 조절에는 보정 범위를 반영하는 `--Set`·`--Offset`을 사용하세요. UDP는 저장된 포트와 키로 로컬 서버에 접속합니다. `--demo`와 `--UDP`를 함께 사용할 수 없습니다.
 
-`--VCP=0x10:50`은 보정된 밝기 비율이 아닌 **MCCS 원시 값**을 전송합니다. 일반 밝기 조절에는 모니터별 밝기 범위를 반영하는 `--Set` 또는 `--Offset`을 사용하세요.
+## 원본 설정과 기존 밝기 가져오기
 
-## 설정과 문제 확인 · Settings and troubleshooting
+설정의 **고급** 페이지에서 Electron의 `settings.json`을 선택합니다. 원본과 네이티브 모니터 ID가 다를 수 있으므로 가져오기 결과에 표시된 원본 ID를 현재 모니터에 매핑한 뒤 다시 적용하세요. 매핑되지 않은 값은 `unresolved:` 식별자로 보존하며 실제 모니터에 적용하지 않습니다. 원본 JSON과 지원되지 않은 항목의 보고서도 남깁니다.
 
-- Native preferences: `%APPDATA%\TwinkleTray.WinUI\settings.json`.
-- Error log: `%LOCALAPPDATA%\TwinkleTray.WinUI\errors.log`.
-- Corrupt JSON is not silently reset: the original remains in place and a timestamped recovery copy is attempted before an error is surfaced.
-- Demo mode uses simulated monitors and temporary in-memory preferences. It does not change physical monitor brightness or save native preferences.
-- Upstream Electron preferences are neither imported nor overwritten.
+원본의 마지막 밝기는 별도 `known-displays.json`에 저장됩니다. 고급 페이지의 별도 가져오기 기능으로 이 파일도 선택하면 매핑된 밝기를 복원 설정으로 옮길 수 있습니다. 서로 다른 디스플레이 기록이 같은 대상에 매핑되면 충돌을 보고하고 해당 값은 적용하지 않습니다. 원본 모델·인스턴스 ID의 별칭은 같은 대상에 매핑할 수 있습니다.
 
-설정은 자동 저장됩니다. 손상된 JSON은 조용히 덮어쓰지 않고 원본과 가능한 경우 복구 사본을 보존합니다. 데모 모드는 실제 모니터 밝기나 저장된 설정을 변경하지 않습니다. 기존 Electron 버전과 설정 파일을 공유하지 않습니다.
+가져오기는 원본 Electron 파일을 수정하지 않습니다. 기존 네이티브 설정은 교체 전에 백업하며, 가져온 시작 프로그램 설정을 자동으로 활성화하지 않습니다. 내보낸 파일에는 UDP 인증 키가 포함됩니다.
 
-If restore or XAML compilation reports a path longer than **260 characters**, use a shorter checkout path and a short writable NuGet cache path, then build again. For example, after creating a suitable directory:
+- 네이티브 설정: `%APPDATA%\TwinkleTray.WinUI\settings.json`
+- 오류 로그: `%LOCALAPPDATA%\TwinkleTray.WinUI\errors.log`
+- 손상된 설정 JSON: 조용히 덮어쓰지 않고 원본과 가능한 복구 사본을 보존합니다.
+- 데모: 모의 모니터와 메모리 내 설정을 사용하며 실제 밝기나 저장된 환경설정을 변경하지 않습니다.
+
+## ZIP·MSIX 패키지와 업데이트
+
+```powershell
+# 빌드한 x64 앱의 포터블 ZIP만 생성
+.\winui\package.ps1 -Architecture x64 -Version 0.2.0 -SkipMsix
+
+# ZIP과 MSIX 생성 — Windows SDK의 makeappx.exe 필요
+.\winui\package.ps1 -Architecture x64 -Version 0.2.0
+.\winui\package.ps1 -Architecture ARM64 -Version 0.2.0
+```
+
+패키지와 아키텍처별 SHA-256 목록은 `winui/artifacts/packages/`에 생성됩니다. 기본 MSIX는 **서명되지 않은 검증용 패키지**입니다. 실제 설치·배포에는 패키지 Publisher와 일치하는 신뢰된 인증서로 서명해야 합니다. 스크립트는 `-Publisher`와 `-CertificatePath`를 지원하며, 인증서를 자동으로 신뢰 목록에 설치하지 않습니다. 서명된 설치·시작 프로그램·제거 동작은 별도 검증 대상입니다. 프리뷰에서 정식 버전으로의 MSIX 업그레이드에는 숫자 리비전 관리가 필요합니다. `-MsixRevision`과 배포 방법은 [패키징 문서](PACKAGING.md)를 참고하세요.
+
+포터블 앱의 업데이트는 BK927 저장소의 `winui-v…` 릴리스와 아키텍처에 맞는 ZIP을 사용합니다. 업데이트 화면에서 확인·다운로드·설치를 실행하며 SHA-256 확인 후 별도 준비 폴더에서 설치하고 실패 시 기존 파일 복구를 시도합니다. 릴리스에는 ZIP과 `SHA256SUMS.txt`가 필요합니다. MSIX 설치본은 해당 패키지 배포 경로로 업데이트하며, 원본 Microsoft Store 앱의 배포 ID를 공유하지 않습니다.
+
+## 검증
+
+```powershell
+# WinUI·하드웨어와 독립적인 코어 테스트
+dotnet run --project .\winui\TwinkleTray.Core.Tests --configuration Release
+
+# 실제 모니터를 쓰지 않는 GUI·IPC 통합 검사
+.\winui\test-app.ps1 -AppPath '.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe'
+
+# 장치 읽기 전용 진단
+dotnet run --project .\winui\TwinkleTray.Hardware\Diagnostics --configuration Release -- --read-only
+```
+
+통합 스크립트는 새로 생성된 GUI 검사 보고서를 확인하고 숨겨진 데모 인스턴스로 명령을 검사합니다. 다른 데모 인스턴스를 먼저 닫아 주세요. 각 프로세스 대기에는 제한 시간이 있으며 스크립트가 직접 시작한 프로세스만 종료합니다. 결과는 `winui/artifacts/test-results/`에 남고 `-TestOutput`으로 위치를 바꿀 수 있습니다.
+
+현재 확인한 결과:
+
+| 검사 | 확인된 범위 |
+| --- | --- |
+| 코어 | **38/38 통과**: 보정·일정·태양 위치·센서 곡선·프로필·설정 복구·가져오기·SemVer·CLI |
+| 확장 GUI·런타임 | **설정 페이지 11개와 런타임 검사 15개 통과**. 감마·HDR·최소 밝기 확장·다중 단축키·프로필·전환 취소·지연 복원·UDP 인증과 잘못된 입력·업데이트 파일 복사/롤백을 모의 환경에서 검사했습니다. |
+| 데모 IPC | **통합 검사 7개 그룹 통과**. 시작·목록·밝기 60/65·잘못된 모니터 오류·도움말·시간 예약 적용·별도 OSD를 확인했습니다. |
+| 빌드 | **x64·ARM64 클린 Release 배포 빌드에서 경고·오류 0개**를 확인했습니다. 최종 UDP 키 호환성 수정 후 재빌드와 전체 모의 실행 검사도 통과했습니다. |
+| 실제 장치 읽기 | 외부 모니터 2대 탐지와 기능 읽기 확인. 실제 밝기·대비·전원·HDR·감마 쓰기는 수행하지 않았습니다. |
+| MSIX·업데이트 | **서명되지 않은 MSIX 시험 패키지 구성 검증, 시험 설치 폴더의 파일 교체와 실패 시 롤백 통과**. 실제 릴리스 다운로드·부모 프로세스 종료·재시작 전체 흐름과 서명된 MSIX 설치는 미검증입니다. |
+
+위 GUI·IPC 결과는 2026-09-29 05:22 UTC에 완료한 `20260929T052250349-ce57c492a2294624b6555a42a1d28911` 검사 보고서를 기준으로 합니다. 모의 화면 2개를 사용했고 하드웨어 쓰기 횟수는 0입니다. 한국어 일반·DDC/CI·프로필 편집·조도 센서 설정을 기본 창 크기에서 확인하고 밝기 패널도 확인했습니다. `--demo --settings`로 처음 여는 설정 창의 표시·크기 문제 역시 수정 후 정상 표시를 확인했습니다. 영어·밝은 테마·고대비·여러 DPI의 전체 조합 검사는 아직 수행하지 않았습니다.
+
+노트북 WMI·전용 밝기 키·덮개 상태, Apple 화면, 실제 조도 센서, 절전·핫플러그 복원, ARM64 실행은 해당 장치에서 추가 검증해야 합니다. [이식 체크리스트](PORT-CHECKLIST.md)의 미검증 항목을 구현 누락과 혼동하지 마세요.
+
+[WinUI CI](../.github/workflows/winui.yml)는 x64·ARM64 빌드, 코어 검사, 읽기 전용 진단과 ZIP·MSIX 패키징을 수행합니다. GUI·IPC 검사는 수동 실행에서 선택하며, 대화형 데스크톱이 없으면 생략됩니다. CI 구성 자체가 모든 실행의 성공 증거는 아닙니다.
+
+## 빌드 문제와 소스 구성
+
+XAML 컴파일·패키지 복원에서 260자 경로 오류가 발생하면 저장소와 NuGet 캐시를 짧고 쓰기 가능한 경로에 두세요. 다음 설정은 현재 PowerShell 세션에만 적용됩니다.
 
 ```powershell
 $env:NUGET_PACKAGES = 'C:\nuget'
 .\winui\build.ps1
 ```
 
-이 환경 변수는 현재 PowerShell 세션에만 적용됩니다. 스크립트는 설치된 .NET SDK를 수정하지 않습니다. 260자 경로 오류가 발생하면 짧고 쓰기 가능한 경로를 사용하세요.
-
-This environment variable applies to the current PowerShell session. The build script never modifies the installed SDK. Use a cache path writable by your account.
-
-## 검증 · Validation
-
-```powershell
-# Hardware-independent tests: normalization, settings recovery, schedules, CLI validation.
-dotnet run --project .\winui\TwinkleTray.Core.Tests --configuration Release
-
-# Native GUI and IPC integration tests using two simulated displays.
-.\winui\test-app.ps1 -AppPath '.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe'
-```
-
-The integration script verifies a newly written startup report with six settings pages, then starts a hidden demo instance and checks monitor listing, set-all, a per-monitor offset, invalid-monitor errors, and help. Each process wait is limited to 30 seconds. Logs and results are retained under `winui/artifacts/test-results/`; `-TestOutput` overrides this location. Close other demo instances first. The script only stops the processes it starts.
-
-통합 검사 스크립트는 새로 작성된 GUI 시작 보고서와 설정 페이지 6개를 확인한 다음, 숨겨진 데모 인스턴스를 실행해 목록·밝기 일괄 설정·개별 증감·오류 응답·도움말을 검사합니다. 다른 데모 인스턴스는 먼저 닫아 주세요. 각 프로세스의 대기 시간은 최대 30초이며 자신이 실행한 프로세스만 종료합니다. 결과와 로그는 `winui/artifacts/test-results/`에 남습니다.
-
-Verified: **14/14 core tests**, a **Release build with zero warnings and zero errors**, and successful **x64 and ARM64 publishing**. All **five x64 integration-test groups passed**: fresh native startup with six settings pages, demo listing, IPC brightness updates (60/65), invalid-monitor failure, and help. The Korean brightness panel and General, Monitors, and Hotkeys settings were visually inspected. Read-only hardware discovery succeeded with two external monitors; real brightness, contrast, and power writes have **not** been exercised. ARM64 runtime behavior remains untested.
-
-**코어 테스트 14개**, **경고·오류가 없는 Release 빌드**, **x64·ARM64 배포 빌드**를 확인했습니다. **x64 통합 검사 5개 항목도 모두 통과**했습니다. 설정 페이지 6개를 포함한 GUI 시작, 데모 목록, IPC 밝기 변경 결과 60/65, 잘못된 모니터에 대한 오류 응답, 도움말을 검사했습니다. 한국어 밝기 패널과 일반·모니터·단축키 설정 화면도 육안으로 확인했습니다. 외부 모니터 두 대의 읽기 전용 탐지도 확인했으며 실제 밝기·대비·전원 변경과 ARM64 장치 실행은 검증하지 않았습니다.
-
-The [WinUI workflow](../.github/workflows/winui.yml) builds self-contained x64 and ARM64 outputs and runs the core tests. GUI/IPC integration testing is opt-in on manual runs because an interactive desktop is not guaranteed on hosted runners; it uses simulated monitors and skips when no interactive desktop is available. The upstream Electron workflow remains separate.
-
-## 소스 구성 · Source layout
-
-| Project | Responsibility |
+| 프로젝트 | 역할 |
 | --- | --- |
-| `TwinkleTray.Core` | Settings, calibration math, daily schedules, command-line parsing; independent of WinUI. |
-| `TwinkleTray.Core.Tests` | Package-free executable tests; nonzero exit code on failure. |
-| `TwinkleTray.Hardware` | Serialized DDC/CI and WMI access, monitor identity and discovery, native handle ownership. |
-| `TwinkleTray.WinUI` | Native panel/settings windows, tray, hotkeys, idle handling, startup integration, localization, and single-instance IPC. |
+| `TwinkleTray.Core` | 설정·보정·태양 위치·일정·센서 곡선·프로필·가져오기·버전 비교·CLI |
+| `TwinkleTray.Core.Tests` | 외부 테스트 패키지가 필요 없는 실행형 테스트 |
+| `TwinkleTray.Hardware` | DDC/CI·WMI·HDR·감마·Apple HID·센서와 Windows 상태 관찰 |
+| `TwinkleTray.WinUI` | 패널·설정·OSD·트레이·단축키·자동화·IPC·UDP·업데이트 |
+
+## English
+
+This community C#/WinUI 3 port implements Twinkle Tray's main controls and advanced DDC/CI, HDR SDR-white-level adjustment, gamma dimming, calibration, solar schedules, multi-action hotkeys, app profiles, ambient sensors, Electron settings/known-display import, UDP control and portable updates. The original Electron sources, assets, translations and license remain intact.
+
+Build on Windows 10 build 19041 or later with the .NET 10 SDK: `./winui/build.ps1 -Architecture x64,ARM64`. Run with `--demo` for simulated monitors, `--settings` for preferences, or `--help` for CLI usage. Distribute the whole self-contained output directory or follow [PACKAGING.md](PACKAGING.md); default MSIX packages are unsigned and require trusted signing before deployment.
+
+**Implemented does not mean tested on every device.** All 38 core tests, 11 settings pages, 15 simulated runtime assertions and 7 IPC test groups passed, including fixture update copying and rollback. Live hardware writes, physical ARM64 execution, signed MSIX installation and the full download/process-restart upgrade flow remain unverified. See the [source audit and validation checklist](PORT-CHECKLIST.md) and [hardware documentation](TwinkleTray.Hardware/README.md) for precise limits.
 
 Twinkle Tray was created by Xander Frangos and contributors. This community port retains their copyright and the repository's MIT license.

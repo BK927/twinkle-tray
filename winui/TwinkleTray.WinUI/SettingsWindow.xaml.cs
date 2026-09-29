@@ -15,23 +15,24 @@ namespace TwinkleTray.WinUI;
 
 public sealed partial class SettingsWindow : Window
 {
-    private readonly AppSettings _settings;
+    private AppSettings _settings;
     private readonly Action _saveSettings;
     private readonly Action _refreshMonitors;
+    private readonly SettingsActions _actions;
     private IReadOnlyList<MonitorSnapshot> _monitors;
     private string _page = "general";
 
-    public SettingsWindow(AppSettings settings, IReadOnlyList<MonitorSnapshot> monitors, Action saveSettings, Action refreshMonitors)
+    public SettingsWindow(AppSettings settings, IReadOnlyList<MonitorSnapshot> monitors, Action saveSettings, Action refreshMonitors, SettingsActions? actions = null)
     {
         _settings = settings;
         _monitors = monitors;
         _saveSettings = saveSettings;
         _refreshMonitors = refreshMonitors;
+        _actions = actions ?? new SettingsActions();
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
-        SystemBackdrop = new MicaBackdrop();
-        SetInitialSizeAndPosition();
+        Root.Loaded += (_, _) => SetInitialSizeAndPosition();
         var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico");
         if (File.Exists(icon)) AppWindow.SetIcon(icon);
         Localize();
@@ -44,7 +45,23 @@ public sealed partial class SettingsWindow : Window
     public void UpdateMonitors(IReadOnlyList<MonitorSnapshot> monitors)
     {
         _monitors = monitors;
-        if (_page is "monitors" or "time" or "hotkeys") RenderPage();
+        if (_page is "monitors" or "features" or "time" or "hotkeys" or "profiles" or "sensors") RenderPage();
+    }
+
+    public void ShowStatus(string message)
+    {
+        StatusBar.Message = message;
+        StatusBar.IsOpen = !string.IsNullOrWhiteSpace(message);
+    }
+
+    public void ReloadSettings(AppSettings settings)
+    {
+        _settings = settings;
+        _features.Clear();
+        _sensorDevices = [];
+        Localize();
+        ApplyTheme();
+        RenderPage();
     }
 
     private void SetInitialSizeAndPosition()
@@ -69,7 +86,7 @@ public sealed partial class SettingsWindow : Window
         var verified = 0;
         try
         {
-            foreach (var page in new[] { "general", "monitors", "time", "hotkeys", "idle", "about" })
+            foreach (var page in new[] { "general", "monitors", "features", "time", "hotkeys", "idle", "profiles", "sensors", "advanced", "updates", "about" })
             {
                 _page = page;
                 RenderPage();
@@ -98,10 +115,15 @@ public sealed partial class SettingsWindow : Window
         WindowTitle.Text = Title;
         GeneralNavigation.Content = T("SETTINGS_SIDEBAR_GENERAL", "General");
         MonitorsNavigation.Content = T("SETTINGS_SIDEBAR_MONITORS", "Monitor Settings");
+        FeaturesNavigation.Content = T("SETTINGS_SIDEBAR_FEATURES", "DDC/CI Features");
         TimeNavigation.Content = T("SETTINGS_SIDEBAR_TIME", "Time Adjustments");
         HotkeysNavigation.Content = T("SETTINGS_SIDEBAR_HOTKEYS", "Hotkeys & Shortcuts");
         IdleNavigation.Content = T("SETTINGS_TIME_IDLE_TITLE", "Idle Detection");
         AboutNavigation.Content = T("NATIVE_ABOUT", "About");
+        ProfilesNavigation.Content = T("SETTINGS_PROFILES_TITLE", "Profiles");
+        SensorsNavigation.Content = T("SETTINGS_LIGHT_SENSOR_TITLE", "Light Sensor");
+        AdvancedNavigation.Content = T("NATIVE_ADVANCED", "Advanced");
+        UpdatesNavigation.Content = T("SETTINGS_SIDEBAR_UPDATES", "Updates");
     }
 
     private void ApplyTheme()
@@ -112,6 +134,17 @@ public sealed partial class SettingsWindow : Window
             "dark" => ElementTheme.Dark,
             _ => ElementTheme.Default
         };
+        if (!_settings.UseAcrylic)
+        {
+            SystemBackdrop = null;
+            Root.Background = (Brush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"];
+        }
+        else
+        {
+            Root.Background = null;
+            if (_settings.WindowsStyle == "win10") { if (SystemBackdrop is not DesktopAcrylicBackdrop) SystemBackdrop = new DesktopAcrylicBackdrop(); }
+            else if (SystemBackdrop is not MicaBackdrop) SystemBackdrop = new MicaBackdrop();
+        }
     }
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -130,9 +163,14 @@ public sealed partial class SettingsWindow : Window
         switch (_page)
         {
             case "monitors": RenderMonitors(); break;
-            case "time": RenderTime(); break;
-            case "hotkeys": RenderHotkeys(); break;
+            case "features": RenderFeatures(); break;
+            case "time": RenderTimeAdvanced(); break;
+            case "hotkeys": RenderHotkeysAdvanced(); break;
             case "idle": RenderIdle(); break;
+            case "profiles": RenderProfiles(); break;
+            case "sensors": RenderSensors(); break;
+            case "advanced": RenderAdvanced(); break;
+            case "updates": RenderUpdates(); break;
             case "about": RenderAbout(); break;
             default: RenderGeneral(); break;
         }
@@ -160,17 +198,22 @@ public sealed partial class SettingsWindow : Window
                     ("dark", T("SETTINGS_GENERAL_THEME_DARK", "Dark"))], _settings.Theme,
                 value => { _settings.Theme = value; ApplyTheme(); Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_LANGUAGE_TITLE", "Language"), null,
-            Choice([("system", T("SETTINGS_GENERAL_LANGUAGE_SYSTEM", "System language (default)")), ("en", "English"), ("ko", "한국어")],
+            Choice(LanguageChoices(),
                 _settings.Language, value => { _settings.Language = value; Localize(); Save(); RenderPage(); })));
         PageContent.Children.Add(SettingRow(T("PANEL_BUTTON_LINK_LEVELS", "Link levels"), T("NATIVE_LINK_DESCRIPTION", "Adjust all displays together from the brightness panel."),
             Toggle(_settings.LinkedBrightness, value => { _settings.LinkedBrightness = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("NATIVE_SCROLL_STEP", "Brightness adjustment step"), T("NATIVE_SCROLL_DESCRIPTION", "Brightness change when using the mouse wheel over a slider."),
             Number(_settings.ScrollStep, 1, 100, value => { _settings.ScrollStep = value; Save(); })));
+        RenderGeneralExtensions();
     }
 
     private void RenderMonitors()
     {
         Heading(T("SETTINGS_SIDEBAR_MONITORS", "Monitor Settings"), T("NATIVE_MONITORS_DESCRIPTION", "Customize display names, their order, and brightness ranges."));
+        PageContent.Children.Add(SettingRow(T("SETTINGS_MONITORS_RATE_TITLE", "Brightness update rate") + " (ms)", T("SETTINGS_MONITORS_RATE_DESC", "Increase the interval if your displays flicker while changing brightness."),
+            Number(_settings.UpdateIntervalMilliseconds, 16, 5000, value => { _settings.UpdateIntervalMilliseconds = value; Save(); })));
+        PageContent.Children.Add(SettingRow(T("SETTINGS_MONITORS_HIDE_INTERNAL_TITLE", "Hide Inactive Internal Display"), T("SETTINGS_MONITORS_HIDE_INTERNAL_DESC", "Hide the internal brightness slider when the laptop lid is closed."),
+            Toggle(_settings.HideClosedLid, value => { _settings.HideClosedLid = value; Save(); })));
         var refresh = new Button { Content = T("GENERIC_REFRESH_DISPLAYS", "Refresh displays"), Margin = new Thickness(0, 0, 0, 8) };
         refresh.Click += (_, _) => _refreshMonitors();
         PageContent.Children.Add(refresh);
@@ -223,6 +266,9 @@ public sealed partial class SettingsWindow : Window
                 Save();
             };
             contents.Children.Add(name);
+            contents.Children.Add(InlineRow(T("NATIVE_SHOW_NAME", "Show monitor name on slider"), Toggle(preferences.ShowName, value => { preferences.ShowName = value; Save(); })));
+            contents.Children.Add(InlineRow(T("NATIVE_SHOW_VALUE", "Show brightness value on slider"), Toggle(preferences.ShowValue, value => { preferences.ShowValue = value; Save(); })));
+            contents.Children.Add(TextEditor(T("NATIVE_SLIDER_GLYPH", "Slider icon (optional character)"), preferences.IconGlyph, value => { preferences.IconGlyph = value; Save(); }));
             contents.Children.Add(InlineRow(T("NATIVE_HIDE", "Hide from brightness panel"), Toggle(preferences.Hidden, value => { preferences.Hidden = value; Save(); })));
             var contrast = Toggle(preferences.ShowContrast, value => { preferences.ShowContrast = value; Save(); });
             contrast.IsEnabled = monitor.SupportsContrast;
@@ -276,142 +322,47 @@ public sealed partial class SettingsWindow : Window
         RenderPage();
     }
 
-    private void RenderTime()
-    {
-        Heading(T("SETTINGS_TIME_TITLE", "Time of Day Adjustments"), T("NATIVE_TIME_DESCRIPTION", "Change the selected displays' brightness every day at a specified local time."));
-        var add = AddButton(T("SETTINGS_TIME_ADD", "Add a time"));
-        add.Click += (_, _) =>
-        {
-            _settings.Schedule.Add(new ScheduleEntry { Id = Guid.NewGuid().ToString("N"), Enabled = true, Time = DateTime.Now.AddHours(1).ToString("HH:mm", CultureInfo.InvariantCulture), Brightness = 50, MonitorId = "all" });
-            Save();
-            RenderPage();
-        };
-        PageContent.Children.Add(add);
-        if (_settings.Schedule.Count == 0)
-            PageContent.Children.Add(Description(T("NATIVE_NO_SCHEDULE", "No brightness adjustments scheduled. Add a time to get started."), new Thickness(0, 8, 0, 0)));
-        foreach (var schedule in _settings.Schedule.OrderBy(s => s.Time).ToList())
-        {
-            var content = new StackPanel { Spacing = 14 };
-            var validTime = DateTime.TryParseExact(schedule.Time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed);
-            var timeWarning = new InfoBar
-            {
-                IsOpen = !validTime, IsClosable = false, Severity = InfoBarSeverity.Warning,
-                Message = T("NATIVE_INVALID_TIME", "The saved time is invalid. Choose a valid time before enabling this schedule.")
-            };
-            var time = new TimePicker
-            {
-                Header = T("NATIVE_TIME", "Time"), ClockIdentifier = "24HourClock",
-                Time = validTime ? parsed.TimeOfDay : TimeSpan.FromHours(12),
-                HorizontalAlignment = HorizontalAlignment.Left
-            };
-            content.Children.Add(EditorHeader(schedule.Enabled && validTime, value =>
-            {
-                schedule.Time = time.Time.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
-                schedule.Enabled = value;
-                validTime = true;
-                timeWarning.IsOpen = false;
-                Save();
-            }, () => { _settings.Schedule.Remove(schedule); Save(); RenderPage(); }, T("SETTINGS_TIME_REMOVE", "Remove time")));
-            time.TimeChanged += (_, args) =>
-            {
-                schedule.Time = args.NewTime.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
-                if (!validTime) schedule.Enabled = false;
-                validTime = true;
-                timeWarning.IsOpen = false;
-                Save();
-            };
-            content.Children.Add(timeWarning);
-            content.Children.Add(time);
-            content.Children.Add(TargetChoice(schedule.MonitorId, value => { schedule.MonitorId = value; Save(); }));
-            content.Children.Add(BrightnessEditor(schedule.Brightness, value => { schedule.Brightness = value; Save(); }));
-            PageContent.Children.Add(Card(content));
-        }
-    }
-
-    private void RenderHotkeys()
-    {
-        Heading(T("SETTINGS_SIDEBAR_HOTKEYS", "Hotkeys & Shortcuts"), T("SETTINGS_HOTKEYS_DESC", "Configure hotkeys to adjust the brightness of one or all displays."));
-        PageContent.Children.Add(Description(T("NATIVE_HOTKEY_HINT", "Choose modifiers, a key, and an action, then enable the shortcut. Combinations used by other apps may be unavailable."), new Thickness(0, 0, 0, 8)));
-        var add = AddButton(T("SETTINGS_HOTKEYS_ADD", "Add Hotkey"));
-        add.Click += (_, _) =>
-        {
-            _settings.Hotkeys.Add(new HotkeyBinding { Id = Guid.NewGuid().ToString("N"), Enabled = false, Modifiers = 6, VirtualKey = 0x26, Action = "increase", MonitorId = "all", Step = 5 });
-            Save();
-            RenderPage();
-        };
-        PageContent.Children.Add(add);
-        if (_settings.Hotkeys.Count == 0)
-            PageContent.Children.Add(Description(T("NATIVE_NO_HOTKEYS", "No shortcuts configured. Add a hotkey to get started."), new Thickness(0, 8, 0, 0)));
-        foreach (var hotkey in _settings.Hotkeys.ToList())
-        {
-            var content = new StackPanel { Spacing = 14 };
-            var valid = hotkey.VirtualKey is > 0 and <= 255 && hotkey.Action is "increase" or "decrease" or "power";
-            content.Children.Add(EditorHeader(hotkey.Enabled && valid, value =>
-            {
-                hotkey.Enabled = value && hotkey.VirtualKey is > 0 and <= 255 && hotkey.Action is "increase" or "decrease" or "power";
-                Save();
-                if (value && !hotkey.Enabled) RenderPage();
-            }, () => { _settings.Hotkeys.Remove(hotkey); Save(); RenderPage(); }, T("SETTINGS_HOTKEYS_REMOVE", "Remove hotkey")));
-            if (!valid)
-                content.Children.Add(new InfoBar
-                {
-                    IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning,
-                    Message = T("NATIVE_INVALID_HOTKEY", "Choose a valid key and action before enabling this shortcut.")
-                });
-            content.Children.Add(Label(T("NATIVE_MODIFIERS", "Modifiers")));
-            var modifiers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
-            foreach (var (bit, label) in new (uint, string)[] { (2, "Ctrl"), (1, "Alt"), (4, "Shift"), (8, "Win") })
-            {
-                var modifier = new CheckBox { Content = label, IsChecked = (hotkey.Modifiers & bit) != 0 };
-                modifier.Checked += (_, _) => { hotkey.Modifiers |= bit; Save(); };
-                modifier.Unchecked += (_, _) => { hotkey.Modifiers &= ~bit; Save(); };
-                modifiers.Children.Add(modifier);
-            }
-            content.Children.Add(modifiers);
-            var keyChoices = KeyChoices();
-            var selectedKey = hotkey.VirtualKey.ToString();
-            if (!keyChoices.Any(k => k.Value == selectedKey)) keyChoices.Add((selectedKey, $"0x{hotkey.VirtualKey:X2}"));
-            var key = Choice(keyChoices, selectedKey, value => { hotkey.VirtualKey = uint.Parse(value); Save(); RenderPage(); });
-            key.Header = T("NATIVE_KEY", "Key");
-            content.Children.Add(key);
-            var action = Choice([
-                ("increase", T("SETTINGS_HOTKEYS_INCREASE", "Increase Brightness")),
-                ("decrease", T("SETTINGS_HOTKEYS_DECREASE", "Decrease Brightness")),
-                ("power", T("PANEL_BUTTON_TURN_OFF_DISPLAYS", "Turn off displays"))],
-                hotkey.Action, value => { hotkey.Action = value; Save(); RenderPage(); });
-            action.Header = T("SETTINGS_HOTKEY_ACTION", "Action");
-            content.Children.Add(action);
-            content.Children.Add(TargetChoice(hotkey.MonitorId, value => { hotkey.MonitorId = value; Save(); }));
-            if (hotkey.Action != "power")
-            {
-                var step = Number(hotkey.Step, 1, 100, value => { hotkey.Step = value; Save(); });
-                step.Header = T("SETTINGS_HOTKEYS_LEVEL_TITLE", "Brightness level adjustment");
-                step.Width = 240;
-                content.Children.Add(step);
-            }
-            PageContent.Children.Add(Card(content));
-        }
-    }
-
     private void RenderIdle()
     {
         Heading(T("SETTINGS_TIME_IDLE_TITLE", "Idle Detection"), T("SETTINGS_TIME_IDLE_DESC", "When no input has been detected for a period of time, the brightness of all displays will be reduced."));
         PageContent.Children.Add(SettingRow(T("SETTINGS_TIME_IDLE_TITLE", "Idle Detection"), null,
             Toggle(_settings.IdleEnabled, value => { _settings.IdleEnabled = value; Save(); RenderPage(); })));
-        var minutes = Number(_settings.IdleMinutes, 1, 1440, value => { _settings.IdleMinutes = value; Save(); });
+        var minutes = Number(_settings.IdleMinutes, 0, 1440, value =>
+        {
+            _settings.IdleMinutes = value;
+            var adjustSeconds = value == 0 && _settings.IdleSeconds == 0;
+            if (adjustSeconds) _settings.IdleSeconds = 1;
+            Save();
+            if (adjustSeconds) RenderPage();
+        });
         minutes.IsEnabled = _settings.IdleEnabled;
         PageContent.Children.Add(SettingRow(T("NATIVE_IDLE_MINUTES", "Wait time (minutes)"), null, minutes));
         var brightness = BrightnessEditor(_settings.IdleBrightness, value => { _settings.IdleBrightness = value; Save(); }, T("NATIVE_IDLE_BRIGHTNESS", "Brightness while idle"));
         foreach (var control in brightness.Children.OfType<Control>()) control.IsEnabled = _settings.IdleEnabled;
         PageContent.Children.Add(Card(brightness));
         PageContent.Children.Add(Description(T("NATIVE_IDLE_RESTORE", "Previous brightness is restored when you use the mouse or keyboard again."), new Thickness(0, 8, 0, 0)));
+        PageContent.Children.Add(SettingRow(T("NATIVE_IDLE_SECONDS", "Additional wait time (seconds)"), null,
+            Number(_settings.IdleSeconds, 0, 59, value =>
+            {
+                _settings.IdleSeconds = value;
+                var adjustMinutes = value == 0 && _settings.IdleMinutes == 0;
+                if (adjustMinutes) _settings.IdleMinutes = 1;
+                Save();
+                if (adjustMinutes) RenderPage();
+            })));
+        PageContent.Children.Add(SettingRow(T("SETTINGS_TIME_IDLE_FS_TITLE", "Fullscreen apps block idle detection"), T("SETTINGS_TIME_IDLE_FS_DESC", "The focused fullscreen app prevents idle dimming."),
+            Toggle(_settings.IdleCheckFullscreen, value => { _settings.IdleCheckFullscreen = value; Save(); })));
+        PageContent.Children.Add(SettingRow(T("SETTINGS_TIME_IDLE_MEDIA_TITLE", "Media blocks idle detection"), T("SETTINGS_TIME_IDLE_MEDIA_DESC", "Media playback reported by Windows prevents idle dimming."),
+            Toggle(_settings.IdleCheckMedia, value => { _settings.IdleCheckMedia = value; Save(); })));
+        PageContent.Children.Add(SettingRow(T("NATIVE_IDLE_RESTORE_DELAY", "Idle restore delay (seconds)"), null,
+            Number(_settings.IdleRestoreSeconds, 0, 3600, value => { _settings.IdleRestoreSeconds = value; Save(); })));
     }
 
     private void RenderAbout()
     {
         Heading(T("NATIVE_PORT_TITLE", "Twinkle Tray · WinUI 3"), T("NATIVE_PORT_DESCRIPTION", "A native Windows app based on the original Twinkle Tray layout and translations."));
-        PageContent.Children.Add(SettingRow(T("NATIVE_IMPLEMENTED_TITLE", "Available features"), T("NATIVE_IMPLEMENTED", "DDC/CI and WMI brightness, contrast on compatible monitors, a tray panel, per-display settings, schedules, global hotkeys, and idle dimming.")));
-        PageContent.Children.Add(SettingRow(T("NATIVE_PENDING_TITLE", "Features awaiting migration"), T("NATIVE_PENDING", "Advanced HDR/SDR control, gamma adjustment, light sensors, app profiles, and some advanced upstream DDC/CI features are not included yet.")));
+        PageContent.Children.Add(SettingRow(T("NATIVE_IMPLEMENTED_TITLE", "Available features"), T("NATIVE_FULL_FEATURES", "Hardware brightness and DDC/CI features, HDR SDR brightness, software dimming, calibrated monitor ranges, solar schedules, multi-action shortcuts, app profiles, ambient light sensors, and idle dimming.")));
+        PageContent.Children.Add(SettingRow(T("NATIVE_HARDWARE_SUPPORT", "Hardware support"), T("NATIVE_HARDWARE_SUPPORT_DESC", "Available controls depend on the capabilities reported by your displays and sensors. Enable DDC/CI in the display's own settings to access its hardware controls.")));
         var links = new StackPanel { Spacing = 8 };
         links.Children.Add(new HyperlinkButton { Content = T("NATIVE_UPSTREAM", "Original project"), NavigateUri = new Uri("https://github.com/xanderfrangos/twinkle-tray"), Padding = new Thickness(0) });
         links.Children.Add(new HyperlinkButton { Content = T("NATIVE_FORK", "WinUI 3 fork"), NavigateUri = new Uri("https://github.com/BK927/twinkle-tray"), Padding = new Thickness(0) });
@@ -587,6 +538,16 @@ public sealed partial class SettingsWindow : Window
         for (var i = 0; i <= 9; i++) keys.Add(((0x30 + i).ToString(), i.ToString()));
         for (var i = 0; i < 26; i++) keys.Add(((0x41 + i).ToString(), ((char)('A' + i)).ToString()));
         for (var i = 1; i <= 24; i++) keys.Add(((0x6F + i).ToString(), $"F{i}"));
+        foreach (var key in Enum.GetValues<Windows.System.VirtualKey>().OrderBy(key => (uint)key))
+        {
+            var code = (uint)key;
+            if (code == 0 || code > 255 || keys.Any(existing => existing.Item1 == code.ToString(CultureInfo.InvariantCulture))) continue;
+            if (key is Windows.System.VirtualKey.Control or Windows.System.VirtualKey.LeftControl or Windows.System.VirtualKey.RightControl
+                or Windows.System.VirtualKey.Shift or Windows.System.VirtualKey.LeftShift or Windows.System.VirtualKey.RightShift
+                or Windows.System.VirtualKey.Menu or Windows.System.VirtualKey.LeftMenu or Windows.System.VirtualKey.RightMenu
+                or Windows.System.VirtualKey.LeftWindows or Windows.System.VirtualKey.RightWindows) continue;
+            keys.Add((code.ToString(CultureInfo.InvariantCulture), key.ToString()));
+        }
         return keys;
     }
 
