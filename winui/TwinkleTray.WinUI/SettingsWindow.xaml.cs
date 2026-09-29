@@ -38,6 +38,7 @@ public sealed partial class SettingsWindow : Window
             SetInitialSizeAndPosition();
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
             {
+                if (_closing) return;
                 PageContent.UpdateLayout();
                 RestorePageState(_renderVersion);
             });
@@ -152,6 +153,7 @@ public sealed partial class SettingsWindow : Window
 
     private void ApplyTheme()
     {
+        if (_closing) return;
         Root.RequestedTheme = _settings.Theme switch
         {
             "light" => ElementTheme.Light,
@@ -174,7 +176,7 @@ public sealed partial class SettingsWindow : Window
 
     private void RenderPage()
     {
-        if (PageContent is null || _isRendering) return;
+        if (_closing || PageContent is null || _isRendering) return;
         CapturePageState();
         var version = ++_renderVersion;
         _viewRestorePending = true;

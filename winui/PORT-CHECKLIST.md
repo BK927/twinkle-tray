@@ -1,4 +1,4 @@
-# Twinkle Tray Native 0.3.0: source audit and validation checklist
+# Twinkle Tray Native 0.3.1: source audit and validation checklist
 
 This is a feature audit, not a claim that every monitor or Windows configuration has been tested. The reference is upstream commit [`e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e`](https://github.com/xanderfrangos/twinkle-tray/tree/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e). Electron sources are preserved alongside the native implementation.
 
@@ -6,7 +6,11 @@ Twinkle Tray Native is maintained at [BK927/twinkle-tray-native](https://github.
 
 **한국어:** 원본의 사용자 기능을 기준으로 이식 범위와 검증 범위를 구분했습니다. `Implemented`는 코드가 있다는 뜻이며 실제 장치 검증을 뜻하지 않습니다. 아래 차이점과 미검증 항목이 남아 있으므로 픽셀 단위 동일성이나 모든 하드웨어에서의 완전한 동작을 보장하는 표가 아닙니다.
 
-**Verification scope:** The **local 0.3.0 Windows x64 run passed**, with fresh evidence below. The 0.2.2 UI results and 0.2.1 physical-device/CI results remain historical records. The new run did not write monitor hardware or user settings, change Windows DPI or exercise high contrast. A 0.3.0 release has not been published and a CI result for these changes is not yet recorded.
+**Verification scope:** The local **0.3.1 Windows x64 run passed 54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases, 53 UI checks and 11 IPC groups**. Input simulation and real native-event coverage are distinguished below. The passing 0.3.0 and 0.2.2 UI runs, and 0.2.1 physical-device results, are preserved as historical evidence. Local records are separate from commit-specific [Actions results](https://github.com/BK927/twinkle-tray-native/actions) and [published releases](https://github.com/BK927/twinkle-tray-native/releases).
+
+## 0.3.1 flyout and input changes
+
+The panel uses one coherent surface with 14 DIP native bordered numeric fields and power under More. In-panel wheel brightness handling is limited to sliders and accumulates partial 120-unit wheel detents. Slider drags send throttled updates while moving. Demo substitutes simulated hardware while retaining production light dismissal, Alt+Tab exclusion, actual tray-icon anchoring and keyboard focus/Escape behavior. A pointer-gesture token distinguishes the same dismiss-and-activate click, without a fixed 350 ms suppression timer. Settings restoration waits for card animations and stable layout before restoring the saved view; closed windows ignore late theme/backdrop work. The fresh run below verifies these paths with documented native and simulated inputs.
 
 ## 0.3.0 tray changes
 
@@ -42,7 +46,7 @@ The audit examined these upstream entry points rather than only the README featu
 
 | User feature | Native implementation | Status / verification boundary |
 | --- | --- | --- |
-| Notification-area app, click-to-open flyout, outside-click dismissal | `TrayService`, `MainWindow` | Implemented; 11 settings pages passed 0.3.0 startup smoke. Light/dark flyout and OSD work-area bounds, real scrolling and persistent slider controls passed with 1/6/12 simulated displays. Historical 0.2.1 direct initial `--demo --settings` display also passed after the root-loaded sizing fix. Outside-click behavior is not part of the automated layout matrix. |
+| Notification-area app, click-to-open flyout, outside-click dismissal | `TrayService`, `MainWindow` | The 0.3.1 native probe activation verified real foreground/deactivation events and dismissal within 109ms. Actual More-popup focus and dismissal passed. Same-click token sequences and anchor requests were simulated; physical tray clicks and physical Tab/Alt+Tab remain unverified. Ordinary demo and normal execution share the lifecycle. |
 | Per-display brightness, percentage, name and monitor icon | `MainWindow`, `BrightnessControl` | Implemented. Native controls preserve the original arrangement; typography, animation and spacing are WinUI behavior. |
 | Linked monitor sliders; independent levels | `AppController.TrySetAsync`, linked settings | Implemented; simulated set-all/per-monitor offset produced the expected 60/65 levels, and linked-hotkey runtime regression passed. The 0.3.0 UI run also verified one linked slider, numeric entry applied to all displays, and independent controls returning after unlink. |
 | Monitor name, order and hidden displays | `MonitorSettings`, monitor settings page | Implemented. Native stable IDs can differ from Electron IDs. |
@@ -50,7 +54,7 @@ The audit examined these upstream entry points rather than only the README featu
 | Slider name/value visibility and glyph | `MonitorSettings`, `MainWindow` | Implemented native customization; these are additions, not claimed imports of upstream settings. |
 | Light/dark/system theme; Windows 10/11 appearance; acrylic | `MainWindow`, settings UI, `OverlayWindow` | Implemented approximation. Korean/English light/dark layout combinations passed again in 0.3.0; observed heading/background colors were checked. Windows 10-style top-toolbar layout passed on the Windows 11 host; an actual Windows 10 session and high contrast remain unverified. Electron CSS and its native-animation settings are not reproduced byte-for-byte. |
 | Original tray icon choices and system-theme updates | `TrayService`, original icon assets | Implemented. Windows notification area controls icon placement/visibility. |
-| Tray mouse-wheel and slider wheel controls, inversion, step size | `TrayService`, `MainWindow` | Implemented; low-level wheel-hook behavior needs an interactive desktop. |
+| Tray mouse-wheel and slider wheel controls, inversion, step size | `TrayService`, `MainWindow`, `WheelDeltaAccumulator` | Implemented. Within the 0.3.1 panel, only slider targets change brightness; partial deltas accumulate into 120-unit detents. Core coverage passed in the 54-test suite. End-to-end physical wheel routing remains unverified because Computer Use could not target the demo tool window. The optional notification-icon wheel shortcut remains separate. |
 | Dedicated brightness OSD, timeout, safe/aggressive policy, per-profile suppression | `OverlayWindow`, automation controller | Implemented as a separate WinUI window. It is not a pixel-identical copy of the Electron OSD. Exclusive fullscreen behavior remains Windows/application-dependent. |
 | Startup registration, background mode, Explorer tray recreation | `StartupService`, `Program`, `TrayService` | Implemented. Startup enable/disable and packaged startup need explicit environment validation. |
 | Languages | `LocalizationService`, copied upstream JSON | Existing translations reused; new native labels have English fallbacks and Korean additions. New labels are not fully translated into every upstream language. |
@@ -109,7 +113,7 @@ The audit examined these upstream entry points rather than only the README featu
 | Native export/import/reset and pre-import backup | Advanced UI/controller | Implemented; file-picker/reset flows need interactive validation. Export includes the UDP key. |
 | Update checking, release channel, release notes | `UpdateService`, updates UI, `SemanticVersion` | Uses the Twinkle Tray Native repository with retained `winui-v` release tags. The first 0.2.x→0.3.0 transition requires a manual install; old binaries pin legacy update paths. [SemVer 2.0](https://semver.org/) precedence is tested for beta progression, stable promotion, numeric identifiers and ignored build metadata. Live newer-release flow remains unverified. |
 | Download, checksum verification, staged installation and rollback | `UpdateService` | Implemented for portable installs. Fixture installation file replacement and forced-failure rollback passed. Release selection, download, checksum and extraction passed against a fixture HTTP handler. Live release download, parent-process shutdown and restart together remain unverified; this is not a verified atomic installer. |
-| x64 release / retained ARM64 build tooling | Build/publish/package scripts | Windows x64 is the supported runtime target and the local 0.3.0 native run passed. Its release is not yet published and no fresh CI result is recorded. Historical 0.2.1 x64 and ARM64 build jobs passed for commit `704dac7` in [GitHub Actions run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766). ARM64 execution is unsupported and untested; retained tooling and past build success do not change that boundary. |
+| x64 release / retained ARM64 build tooling | Build/publish/package scripts | Windows x64 is the supported runtime target. Check the selected version's [Actions run](https://github.com/BK927/twinkle-tray-native/actions) for build artifacts and CI outcome, independently of the local reports below. Historical 0.2.1 x64 and ARM64 build jobs passed for commit `704dac7` in [GitHub Actions run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766). ARM64 execution is unsupported and untested; retained tooling and past build success do not change that boundary. |
 | MSIX package and startup declaration | `package.ps1`, `StartupService` | Packaging support exists and an unsigned fixture passed package validation. Signing, trusted installation, packaged startup and deployment-channel update behavior need separate validation. This fork does not replace the upstream Microsoft Store identity. |
 | Diagnostics, settings dump and logs | Advanced settings, read-only hardware probe | Implemented. Diagnostics should be reviewed before sharing because IDs, paths or settings can identify a local configuration. |
 
@@ -119,14 +123,34 @@ The audit examined these upstream entry points rather than only the README featu
 - Fine-grained debug switches such as disabling only high-level brightness, disabling only HDR detection, forcing the old accurate/fast DDC worker, manually overriding taskbar gap/edge, disabling throttling or individual upstream event-source strategies do not all have equivalent native switches.
 - Windows monitor IDs and Electron model/instance IDs differ. Identity migration must be reviewed, especially for several displays of the same model or a display moved to a different port.
 - Native settings defaults intentionally do not auto-enable login registration, remote UDP or hardware writes merely by opening a demo or importing a file. Import does not change login registration automatically.
-- The 0.2.2 and 0.3.0 layout matrices exercise three DIP viewport sizes at an observed host scale of 1.5. Relative PNG capture scales do not exercise actual DPI switching. Safe OSD/fullscreen handling, third-party taskbar behavior, portrait displays, complete keyboard navigation, screen readers and an actual high-contrast session still require separate acceptance testing.
+- The 0.2.2, 0.3.0 and 0.3.1 layout matrices exercise three DIP viewport sizes at an observed host scale of 1.5. Relative PNG capture scales do not exercise actual DPI switching. Safe OSD/fullscreen handling, third-party taskbar behavior, portrait displays, complete keyboard navigation, screen readers and an actual high-contrast session still require separate acceptance testing.
 - Upstream analytics, its Store identity and its release installer are not reused. The native port has its own release/update channel.
 
 ## Validation record and release gate
 
 See [VERIFICATION.md](VERIFICATION.md) for the Windows x64 0.2.1 acceptance scope, concrete hardware results and regression fixes.
 
-### Local 0.3.0 Windows x64 verification
+### Local 0.3.1 Windows x64 verification
+
+The run passed **54 core tests, 11 settings pages, 44 runtime assertions (including 20 automation regressions), 144 layout cases, 53 interaction/popup checks and 11 IPC groups**. The UI report contains **14 preview PNGs**, no errors, zero hardware writes and zero user-settings writes.
+
+<!-- 0.3.1 RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
+The complete run finished at **2026-09-29 11:05:01.7682965 UTC**. `artifacts/test-results/20260929T110241471-1a85b9a69aa44967b05d8f227bbac56e/{smoke-test,ui-layout-test,integration-test}.json` each records `Passed: true`.
+
+- [x] Settings navigation restores focus, selection and the exact saved scroll offset: **160→160** after layout/card animations settle.
+- [x] Actual native probe-window activation observed foreground transfer at 9ms, before the explicit foreground request, with panel dismissal by 109ms. The smoke-only hold-open seam was released.
+- [x] Actual More-popup keyboard focus and popup closing retain the panel; opening/reopening and immediate refresh restore an enabled XAML control's focus.
+- [x] Pure gesture-state and simulated production-request sequences cover same-click suppression, release-before-dismissal and unrelated/new activations. These do not inject physical tray clicks.
+- [x] Production keyboard-dismiss invocation cancels the draft and hides the panel; physical Escape was not injected. Switcher exclusion/cyclic navigation are configuration checks.
+- [x] A synthetic icon anchor on the display opposite the cursor, among two actual displays, placed the native 450×303-pixel window within the target work area. No cursor movement or physical icon activation was injected.
+- [x] Continuing slider inputs produced an update before their sequence ended and retained the final value. The core suite also covers wheel-delta accumulation.
+- [ ] Physical tray-click, Escape and end-to-end wheel routing. Computer Use could not target the production-equivalent demo tool window, so the separate pointer/key check was not performed.
+- [ ] Native Windows DPI-session changes and actual high contrast. All 14 preview host scales were 1.5; relative bitmap percentages do not replace native sessions.
+- [ ] Live comparison with an installed upstream panel. Source comparison remains the upstream UI reference.
+
+See [UI-POLISH.md](UI-POLISH.md) for the exact native-event versus simulated-request methods. CI and publication remain separate, version-specific records in [Actions](https://github.com/BK927/twinkle-tray-native/actions) and [releases](https://github.com/BK927/twinkle-tray-native/releases).
+
+### Historical local 0.3.0 Windows x64 verification
 
 The new run passed **46 core tests, 11 settings pages, 44 runtime assertions (including 20 automation regressions), 144 layout cases, 36 interaction/popup checks and 11 IPC groups**. The UI report contains **14 preview PNGs**, no errors, zero hardware writes and zero user-settings writes.
 
@@ -141,7 +165,7 @@ The complete run finished at **2026-09-29 09:31:42 UTC**. `artifacts/test-result
 - [x] Interactive simulated-panel wheel changes, Enter to apply one monitor's numeric value, and F5 value preservation. These were demo checks with no real hardware writes.
 - [ ] Live comparison with an installed upstream panel. Source comparison was completed, without claiming pixel-for-pixel identity.
 - [ ] Native multi-DPI sessions and actual high contrast. All preview host scales were 1.5; relative capture percentages do not replace these tests.
-- [ ] Published 0.3.0 release and a completed fresh CI result. Local success alone establishes neither.
+- Publication and CI are separate from this local record: consult [releases](https://github.com/BK927/twinkle-tray-native/releases) and the version's [Actions run](https://github.com/BK927/twinkle-tray-native/actions).
 
 See [UI-POLISH.md](UI-POLISH.md) for the new twelve-case tray coverage and the unchanged environment limits.
 
@@ -187,6 +211,6 @@ Historical 0.2.1 acceptance record (checked items are not 0.2.2 results):
 - [x] Portable update file-copy and failure rollback against temporary fixture installations.
 - [ ] Full live release download/update process, plus signed MSIX install/startup/uninstall on a test installation.
 
-The 0.3.0 local results and 0.2.2 results above are separate from this historical hardware baseline. Device-specific and deployment gaps remain open even when the native layout and interaction checks pass.
+The 0.3.1, 0.3.0 and 0.2.2 local results above are separate from this historical hardware baseline. Device-specific and deployment gaps remain open even when the native layout and interaction checks pass.
 
 Unchecked means unverified, not necessarily unimplemented. Keep this document synchronized with the actual release evidence and retain unsupported details in the import report.

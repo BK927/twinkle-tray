@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32;
 using TwinkleTray.Core;
+using Windows.Graphics;
 
 namespace TwinkleTray.WinUI.Services;
 
@@ -11,24 +12,27 @@ internal sealed class TrayService : IDisposable
 {
     private const uint Callback = 0x8001;
     private const uint ScrollCallback = 0x8002;
+    private const uint RefreshMouseHook = 0x8003;
     private readonly WindowProc _proc;
     private readonly MouseHookProc _mouseProc;
     private readonly nint _instance;
     private readonly string _className = "TwinkleTray.WinUI.Tray." + Guid.NewGuid().ToString("N");
     private readonly uint _taskbarCreated;
+    private readonly TrayPointerGestureTracker _pointerGestures = new();
     private readonly Dictionary<int, HotkeyBinding> _hotkeys = new();
     private HotkeyBinding[] _nativeHotkeys = [];
     private bool _rawInputRegistered;
     private string? _heldBrightnessKey;
     private nint _heldBrightnessDevice;
     private nint _window, _icon, _mouseHook, _lidNotification;
-    private bool _disposed, _scrollEnabled, _modernCallbacks;
+    private bool _disposed, _scrollEnabled, _modernCallbacks, _panelVisible;
     private bool _themeNotifications = true, _powerNotifications = true;
     private int _wheelRemainder;
     private string _iconStyle = "fluent";
     private AppProfile[] _profiles = [];
     public bool AutomationPaused { get; set; }
-    public event Action? Clicked, SettingsRequested, RefreshRequested, ExitRequested, DisplaysChanged, PauseRequested, Resumed, PowerRequested;
+    public event Action<TrayActivation>? Activated, PanelRequested;
+    public event Action? SettingsRequested, RefreshRequested, ExitRequested, DisplaysChanged, PauseRequested, Resumed, PowerRequested;
     public event Action<HotkeyBinding>? HotkeyPressed;
     public event Action<int>? Scrolled;
     public event Action<AppProfile>? ProfileRequested;
@@ -73,15 +77,8 @@ internal sealed class TrayService : IDisposable
         }
         UpdateIcon();
         _scrollEnabled = settings.TrayScrollEnabled;
-        if (_scrollEnabled && _mouseHook == 0)
-        {
-            _mouseHook = SetWindowsHookEx(14, _mouseProc, _instance, 0); // WH_MOUSE_LL
-            if (_mouseHook == 0) { _scrollEnabled = false; throw new Win32Exception(Marshal.GetLastWin32Error(), "Tray wheel control could not be registered."); }
-        }
-        else if (!_scrollEnabled && _mouseHook != 0)
-        {
-            UnhookWindowsHookEx(_mouseHook); _mouseHook = 0; _wheelRemainder = 0;
-        }
+        if (!_scrollEnabled) _wheelRemainder = 0;
+        UpdateMouseHook(throwOnFailure: _scrollEnabled);
     }
 
     private NotifyIconData Data() => new()
@@ -158,6 +155,7 @@ internal sealed class TrayService : IDisposable
         try
         {
             if (_disposed) return DefWindowProc(hwnd, message, wParam, lParam);
+            if (message == RefreshMouseHook) { UpdateMouseHook(); return 0; }
             if (message == _taskbarCreated && _taskbarCreated != 0) { AddIcon(); return 0; }
             if (message == 0x113 && wParam == 1) { AddIcon(); return 0; }
             if (message == 0x113 && wParam == 2)
@@ -182,14 +180,15 @@ internal sealed class TrayService : IDisposable
                 if (_modernCallbacks)
                 {
                     if (((ulong)lParam >> 16 & 0xffff) != 1) return 0;
-                    if (notification is 0x400 or 0x401) Clicked?.Invoke();
+                    var anchor = new Point { X = unchecked((short)(wParam & 0xffff)), Y = unchecked((short)(wParam >> 16 & 0xffff)) };
+                    if (notification is 0x400 or 0x401) Activated?.Invoke(CreateActivation(anchor, notification == 0x401));
                     else if (notification == 0x405) SettingsRequested?.Invoke();
-                    else if (notification == 0x7B) ShowMenu(new Point { X = unchecked((short)(wParam & 0xffff)), Y = unchecked((short)(wParam >> 16 & 0xffff)) });
+                    else if (notification == 0x7B) ShowMenu(anchor);
                 }
                 else
                 {
                     if (wParam != 1) return 0;
-                    if (notification == 0x202) Clicked?.Invoke();
+                    if (notification == 0x202) Activated?.Invoke(CreateActivation(null, false));
                     else if (notification == 0x205) ShowMenu(null);
                 }
                 return 0;
@@ -228,6 +227,8 @@ internal sealed class TrayService : IDisposable
 
     private void ShowMenu(Point? anchor)
     {
+        // Keep the icon's bounds before an overflow tray can close during the menu.
+        var activation = CreateActivation(anchor, anchor is { X: -1, Y: -1 });
         var menu = CreatePopupMenu();
         try
         {
@@ -246,14 +247,13 @@ internal sealed class TrayService : IDisposable
             AppendMenu(menu, 0x800, 0, null);
             AppendMenu(menu, 0, 4, LocalizationService.Get("GENERIC_QUIT", "Quit"));
             Point point;
-            if (anchor is { X: not -1, Y: not -1 } supplied) point = supplied;
-            else if (TryGetIconRect(out var rect)) point = new Point { X = (rect.Left + rect.Right) / 2, Y = (rect.Top + rect.Bottom) / 2 };
-            else GetCursorPos(out point);
+            if (anchor is { } supplied && !(supplied.X == -1 && supplied.Y == -1)) point = supplied;
+            else point = new Point { X = activation.Anchor.X + activation.Anchor.Width / 2, Y = activation.Anchor.Y + activation.Anchor.Height / 2 };
             SetForegroundWindow(_window);
             uint command = TrackPopupMenu(menu, 0x100 | 0x2, point.X, point.Y, 0, _window, 0);
             switch (command)
             {
-                case 1: Clicked?.Invoke(); break;
+                case 1: PanelRequested?.Invoke(activation with { MessageTime = unchecked((uint)GetMessageTime()) }); break;
                 case 2: SettingsRequested?.Invoke(); break;
                 case 3: RefreshRequested?.Invoke(); break;
                 case 4: ExitRequested?.Invoke(); break;
@@ -266,7 +266,9 @@ internal sealed class TrayService : IDisposable
             if (!_disposed)
             {
                 PostMessage(_window, 0, 0, 0);
-                var data = Data(); Shell_NotifyIcon(3, ref data);
+                // Opening a window transfers focus to that window. An outside
+                // click also owns its focus; only return the menu's own focus.
+                if (command is not 1 and not 2 && GetForegroundWindow() == _window) ReturnFocusToIcon();
             }
         }
         finally { DestroyMenu(menu); }
@@ -274,23 +276,72 @@ internal sealed class TrayService : IDisposable
 
     private nint MouseHook(int code, nuint wParam, nint lParam)
     {
-        // WH_MOUSE_LL executes on the installing UI thread. Only wheel events over
-        // this exact visible notification icon are consumed; all other input passes on.
-        if (code >= 0 && wParam == 0x20A && _scrollEnabled && !_disposed)
+        // Observe button gestures before the target can deactivate our panel.
+        // Button input always passes through; only configured tray-wheel input is consumed.
+        if (code >= 0 && !_disposed && wParam is 0x201 or 0x202 or 0x20A)
         {
             try
             {
                 var mouse = Marshal.PtrToStructure<MouseData>(lParam);
-                if (TryGetIconRect(out var rect) && mouse.Point.X >= rect.Left && mouse.Point.X < rect.Right &&
-                    mouse.Point.Y >= rect.Top && mouse.Point.Y < rect.Bottom && IsVisibleTaskbarAt(mouse.Point))
+                if (wParam == 0x201)
+                {
+                    // Once a hidden panel's abandoned gesture is replaced, a
+                    // disabled-wheel hook can be removed after this callback.
+                    _pointerGestures.Press((_panelVisible || _scrollEnabled) && IsPointerOnIcon(mouse.Point));
+                    PostMessage(_window, RefreshMouseHook, 0, 0);
+                }
+                else if (wParam == 0x202)
+                {
+                    _pointerGestures.Release(IsPointerOnIcon(mouse.Point));
+                    PostMessage(_window, RefreshMouseHook, 0, 0);
+                }
+                else if (_scrollEnabled && IsPointerOnIcon(mouse.Point))
                 {
                     var delta = unchecked((short)(mouse.Data >> 16));
                     if (delta != 0 && PostMessage(_window, ScrollCallback, unchecked((nuint)(ushort)delta), 0)) return 1;
                 }
             }
-            catch (Exception) { } // Input hooks must be short and must never swallow input on failure.
+            catch (Exception)
+            {
+                // An unreadable press/release must not leave a stale suppression token.
+                if (wParam is 0x201 or 0x202)
+                {
+                    _pointerGestures.Press(false);
+                    PostMessage(_window, RefreshMouseHook, 0, 0);
+                }
+            } // Input hooks must be short and must never swallow input on failure.
         }
         return CallNextHookEx(_mouseHook, code, wParam, lParam);
+    }
+
+    private bool IsPointerOnIcon(Point point) => TryGetIconRect(out var rect) &&
+        point.X >= rect.Left && point.X < rect.Right && point.Y >= rect.Top && point.Y < rect.Bottom && IsVisibleTaskbarAt(point);
+
+    internal uint CurrentPointerGesture => _pointerGestures.CurrentGesture;
+
+    internal void SetPanelVisible(bool visible)
+    {
+        _panelVisible = visible;
+        UpdateMouseHook();
+    }
+
+    private void UpdateMouseHook(bool throwOnFailure = false)
+    {
+        if (_disposed) return;
+        bool needed = _scrollEnabled || _panelVisible || _pointerGestures.HasPendingGesture;
+        if (needed && _mouseHook == 0)
+        {
+            _mouseHook = SetWindowsHookEx(14, _mouseProc, _instance, 0); // WH_MOUSE_LL
+            if (_mouseHook != 0) return;
+            var exception = new Win32Exception(Marshal.GetLastWin32Error(), "Tray pointer tracking could not be registered; same-click dismissal is unavailable.");
+            if (throwOnFailure) { _scrollEnabled = false; throw exception; }
+            Program.Log(exception);
+        }
+        else if (!needed && _mouseHook != 0)
+        {
+            UnhookWindowsHookEx(_mouseHook);
+            _mouseHook = 0;
+        }
     }
 
     private void ProcessBrightnessInput(nint input)
@@ -381,6 +432,37 @@ internal sealed class TrayService : IDisposable
         return Shell_NotifyIconGetRect(ref identifier, out rect) == 0 && rect.Right > rect.Left && rect.Bottom > rect.Top;
     }
 
+    internal bool TryGetIconBounds(out RectInt32 bounds)
+    {
+        bounds = default;
+        if (_disposed || !TryGetIconRect(out var rect)) return false;
+        bounds = new RectInt32(rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+        return true;
+    }
+
+    private TrayActivation CreateActivation(Point? callbackAnchor, bool keyboard)
+    {
+        uint messageTime = unchecked((uint)GetMessageTime());
+        uint pointerGesture = _pointerGestures.ConsumeActivation();
+        UpdateMouseHook();
+        if (!TryGetIconBounds(out var bounds))
+        {
+            Point point;
+            if (callbackAnchor is { } supplied && !(supplied.X == -1 && supplied.Y == -1)) point = supplied;
+            else if (keyboard) return new TrayActivation(default, true, messageTime);
+            else GetCursorPos(out point);
+            bounds = new RectInt32(point.X, point.Y, 1, 1);
+        }
+        return new TrayActivation(bounds, keyboard, messageTime, keyboard ? 0 : pointerGesture);
+    }
+
+    internal void ReturnFocusToIcon()
+    {
+        if (_disposed) return;
+        var data = Data();
+        Shell_NotifyIcon(3, ref data); // NIM_SETFOCUS: explicit keyboard dismissal.
+    }
+
     private static bool IsVisibleTaskbarAt(Point point)
     {
         var window = GetAncestor(WindowFromPoint(point), 2); // GA_ROOT
@@ -469,6 +551,8 @@ internal sealed class TrayService : IDisposable
     [DllImport("user32.dll")] private static extern uint TrackPopupMenu(nint menu, uint flags, int x, int y, int reserved, nint window, nint rect);
     [DllImport("user32.dll")] private static extern bool DestroyMenu(nint menu);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] private static extern int GetMessageTime();
+    [DllImport("user32.dll")] private static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern bool PostMessage(nint hwnd, uint message, nuint w, nint l);
     [DllImport("user32.dll")] private static extern bool RegisterHotKey(nint hwnd, int id, uint modifiers, uint key);

@@ -36,8 +36,6 @@ public sealed partial class MainWindow : Window
     private string _layoutSignature = "";
     private (string Id, string Text, int Start, int Length)? _refreshDraft;
     private TextBlock? _emptyMessage;
-    private Point _anchorCursor;
-    private long _deactivatedAt;
     private readonly nint _hwnd;
     public bool IsShown { get; private set; }
     internal int RenderGeneration { get; private set; }
@@ -56,9 +54,9 @@ public sealed partial class MainWindow : Window
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
         presenter.IsAlwaysOnTop = true;
-        AppWindow.IsShownInSwitchers = _controller.IsDemo;
+        AppWindow.IsShownInSwitchers = false;
         // WS_EX_TOOLWINDOW excludes this transient flyout from Alt+Tab and the taskbar.
-        if (!_controller.IsDemo) SetWindowLongPtr(_hwnd, -20, (nint)(GetWindowLongPtr(_hwnd, -20).ToInt64() | 0x80));
+        SetWindowLongPtr(_hwnd, -20, (nint)(GetWindowLongPtr(_hwnd, -20).ToInt64() | 0x80));
         Root.Loaded += (_, _) => QueueLayout();
         Root.SizeChanged += (_, _) => QueueLayout();
         PanelBody.SizeChanged += (_, _) => QueueLayout();
@@ -68,12 +66,13 @@ public sealed partial class MainWindow : Window
         catch (COMException) { /* Some unpackaged environments cannot register accessibility notifications. */ }
         Closed += (_, _) =>
         {
+            _closing = true;
             if (!_accessibilitySubscribed) return;
             try { _accessibility.HighContrastChanged -= AccessibilityChanged; }
             catch (COMException) { /* The notification source may already have shut down. */ }
             finally { _accessibilitySubscribed = false; }
         };
-        Activated += (_, args) => { if (args.WindowActivationState == WindowActivationState.Deactivated && !_controller.IsDemo) { _deactivatedAt = Environment.TickCount64; HidePanel(); } };
+        Activated += Panel_Activated;
         AppWindow.Closing += (_, args) => { if (!_closing) { args.Cancel = true; HidePanel(); } };
         _debounce.Tick += async (_, _) => await FlushAsync();
         ApplySettings();
@@ -91,16 +90,17 @@ public sealed partial class MainWindow : Window
         Title = LocalizationService.ProductName;
         bool win10 = _controller.Settings.WindowsStyle == "win10";
         Grid.SetRow(ToolbarSurface, win10 ? 0 : 2);
-        ToolbarSurface.BorderThickness = win10 ? new Thickness(0, 0, 0, 1) : new Thickness(0, 1, 0, 0);
         Heading.Text = T("PANEL_TITLE", "Adjust Brightness");
         ToolTipService.SetToolTip(Heading, LocalizationService.ProductName + "\n" + T("GENERIC_REFRESH_DISPLAYS", "Refresh displays") + " (F5)");
         ToolTipService.SetToolTip(LinkButton, T("PANEL_BUTTON_LINK_LEVELS", "Link levels"));
         AutomationProperties.SetName(LinkButton, T("PANEL_BUTTON_LINK_LEVELS", "Link levels"));
-        ToolTipService.SetToolTip(PowerButton, T("PANEL_BUTTON_TURN_OFF_DISPLAYS", "Turn off displays"));
-        AutomationProperties.SetName(PowerButton, T("PANEL_BUTTON_TURN_OFF_DISPLAYS", "Turn off displays"));
+        PowerMenuItem.Text = T("PANEL_BUTTON_TURN_OFF_DISPLAYS", "Turn off displays");
+        ToolTipService.SetToolTip(MoreButton, T("NATIVE_MORE", "More options"));
+        AutomationProperties.SetName(MoreButton, T("NATIVE_MORE", "More options"));
         ToolTipService.SetToolTip(SettingsButton, T("GENERIC_SETTINGS", "Settings"));
         AutomationProperties.SetName(SettingsButton, T("GENERIC_SETTINGS", "Settings"));
         RefreshMenuItem.Text = T("GENERIC_REFRESH_DISPLAYS", "Refresh displays") + " (F5)";
+        RefreshMoreMenuItem.Text = RefreshMenuItem.Text;
         AutomationProperties.SetName(RefreshProgress, T("GENERIC_DETECTING_DISPLAYS", "Detecting displays…"));
         LinkButton.IsChecked = _controller.Settings.LinkedBrightness;
         RenderMonitors();
@@ -163,7 +163,6 @@ public sealed partial class MainWindow : Window
                 var slider = MakeSlider(id, _controller.LogicalBrightness(monitor), false, name, _controller.CanControl(monitor));
                 card.Children.Add(MakeControlRow(slider, T("PANEL_LABEL_BRIGHTNESS", "Brightness"), expanded ? DefaultFeatureIcon(0x10) : null, linked || preferences.ShowValue, expanded));
                 _sliders[id] = slider;
-                AttachWheel(card, slider);
                 if (!_controller.CanControl(monitor))
                 {
                     card.Children.Add(SecondaryText(T("GENERIC_NOT_SUPPORTED", "Not supported") + " · " + monitor.Connection));
@@ -210,7 +209,7 @@ public sealed partial class MainWindow : Window
                         {
                             if (_updating) return;
                             _pendingFeatures[monitor.Id + ":" + feature.Code] = (monitor.Id, feature.Code, args.NewValue);
-                            _debounce.Stop(); _debounce.Start();
+                            ScheduleWrite();
                         };
                         card.Children.Add(MakeControlRow(control, featureName, icon, true, true));
                     }
@@ -252,7 +251,7 @@ public sealed partial class MainWindow : Window
             if (_updating) return;
             bool linked = !contrast && _controller.Settings.LinkedBrightness;
             _pending[linked ? "all:brightness" : id + (contrast ? ":contrast" : ":brightness")] = (id, args.NewValue, contrast, linked);
-            _debounce.Stop(); _debounce.Start();
+            ScheduleWrite();
         };
         return slider;
     }
@@ -295,9 +294,6 @@ public sealed partial class MainWindow : Window
         row.Children.Add(icon); Grid.SetColumn(control, 1); row.Children.Add(control);
         ToolTipService.SetToolTip(icon, name); ToolTipService.SetToolTip(control, name);
         AutomationProperties.SetName(icon, name);
-        // A nonfocused ComboBox leaves wheel events unhandled. Do not let its
-        // input/power selection row fall through to the monitor brightness row.
-        row.PointerWheelChanged += (_, args) => args.Handled = true;
         return row;
     }
 
@@ -317,10 +313,8 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(slider, sliderColumn); row.Children.Add(slider);
         var editor = new TextBox
         {
-            Text = FormatValue(slider.Value), Width = slider.Maximum > 999 ? 56 : 48, MinWidth = 0, MinHeight = 32,
-            FontSize = compact ? 16 : 22, Padding = new Thickness(2, 0, 2, 0), BorderThickness = new Thickness(0),
-            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), TextAlignment = TextAlignment.Right,
-            VerticalContentAlignment = VerticalAlignment.Center, UseSystemFocusVisuals = true,
+            Style = (Style)Application.Current.Resources["TrayValueTextBoxStyle"],
+            Text = FormatValue(slider.Value), Width = slider.Maximum > 999 ? 64 : 56,
             Visibility = showValue ? Visibility.Visible : Visibility.Collapsed,
         };
         AutomationProperties.SetName(editor, AutomationProperties.GetName(slider));
@@ -335,7 +329,7 @@ public sealed partial class MainWindow : Window
         };
         slider.ValueChanged += (_, _) => { if (!HasFocusWithin(editor)) editor.Text = FormatValue(slider.Value); };
         Grid.SetColumn(editor, sliderColumn + 1); row.Children.Add(editor);
-        AttachWheel(row, slider);
+        AttachWheel(slider);
         return row;
     }
 
@@ -358,12 +352,15 @@ public sealed partial class MainWindow : Window
         return false;
     }
 
-    private void AttachWheel(UIElement target, Slider slider)
+    private void AttachWheel(Slider slider)
     {
-        target.PointerWheelChanged += (_, args) =>
+        var wheel = new WheelDeltaAccumulator();
+        slider.PointerExited += (_, _) => wheel.Reset();
+        slider.PointerWheelChanged += (_, args) =>
         {
             if (args.Handled || _refreshing || !slider.IsEnabled) return;
-            slider.Value = Math.Clamp(slider.Value + Math.Sign(args.GetCurrentPoint(target).Properties.MouseWheelDelta) *
+            int steps = wheel.Add(args.GetCurrentPoint(slider).Properties.MouseWheelDelta);
+            slider.Value = Math.Clamp(slider.Value + steps *
                 _controller.Settings.ScrollStep * (_controller.Settings.InvertScroll ? -1 : 1), slider.Minimum, slider.Maximum);
             if (_numberEditors.TryGetValue(slider, out var editor)) editor.Text = FormatValue(slider.Value);
             args.Handled = true;
@@ -429,8 +426,8 @@ public sealed partial class MainWindow : Window
     {
         LinkButton.Visibility = monitors.Count(_controller.CanControl) > 1 ? Visibility.Visible : Visibility.Collapsed;
         LinkButton.IsEnabled = !_refreshing;
-        PowerButton.IsEnabled = _controller.Settings.PowerOffMode is "windows" or "both" || (_controller.Settings.PowerOffMode == "ddc" && monitors.Any(monitor => monitor.Connection.Contains("DDC", StringComparison.OrdinalIgnoreCase)));
-        PowerButton.Visibility = _controller.Settings.PowerOffMode == "none" ? Visibility.Collapsed : Visibility.Visible;
+        PowerMenuItem.IsEnabled = !_refreshing && (_controller.Settings.PowerOffMode is "windows" or "both" || (_controller.Settings.PowerOffMode == "ddc" && monitors.Any(monitor => monitor.Connection.Contains("DDC", StringComparison.OrdinalIgnoreCase))));
+        PowerMenuItem.Visibility = _controller.Settings.PowerOffMode == "none" ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private static TextBlock SecondaryText(string text, Thickness margin = default) => new()
@@ -463,6 +460,8 @@ public sealed partial class MainWindow : Window
 
     private void ApplyBackdrop()
     {
+        // Theme notifications can remain queued while the native window is closing.
+        if (_closing) return;
         bool acrylic = !_accessibility.HighContrast && _controller.Settings.UseAcrylic && Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported();
         SystemBackdrop = acrylic ? SystemBackdrop ?? new DesktopAcrylicBackdrop() : null;
         SolidBackground.Visibility = acrylic ? Visibility.Collapsed : Visibility.Visible;
@@ -475,6 +474,12 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() => { _layoutQueued = false; if (IsShown && !_closing) PositionPanel(); });
     }
 
+    private void ScheduleWrite()
+    {
+        // Keep a steady update cadence during a drag instead of waiting for it to stop.
+        if (!_debounce.IsEnabled) _debounce.Start();
+    }
+
     private async Task FlushAsync()
     {
         _debounce.Stop();
@@ -482,73 +487,22 @@ public sealed partial class MainWindow : Window
         _flushing = true;
         try
         {
-            while (_pending.Count > 0 || _pendingFeatures.Count > 0)
+            var writes = _pending.Values.ToArray(); _pending.Clear();
+            var featureWrites = _pendingFeatures.Values.ToArray(); _pendingFeatures.Clear();
+            foreach (var write in writes)
+                await _controller.TrySetAsync(write.Id, write.Value, write.Contrast, write.Linked);
+            foreach (var write in featureWrites)
+                try { await _controller.SetFeatureAsync(write.Id, write.Code, write.Value); } catch (Exception exception) { ShowError(exception.Message); }
+        }
+        finally
+        {
+            _flushing = false;
+            if (!_closing)
             {
-                var writes = _pending.Values.ToArray(); _pending.Clear();
-                foreach (var write in writes)
-                    await _controller.TrySetAsync(write.Id, write.Value, write.Contrast, write.Linked);
-                var featureWrites = _pendingFeatures.Values.ToArray(); _pendingFeatures.Clear();
-                foreach (var write in featureWrites)
-                    try { await _controller.SetFeatureAsync(write.Id, write.Code, write.Value); } catch (Exception exception) { ShowError(exception.Message); }
+                if (_pending.Count > 0 || _pendingFeatures.Count > 0) ScheduleWrite();
+                RenderMonitors();
             }
         }
-        finally { _flushing = false; if (!_closing) RenderMonitors(); }
-    }
-
-    public void ShowPanel()
-    {
-        IsShown = true; PositionPanel(useCursor: true); AppWindow.Show(); Activate(); SetForegroundWindow(_hwnd); QueueLayout();
-    }
-    public void HidePanel() { IsShown = false; AppWindow.Hide(); }
-    public void TogglePanel()
-    {
-        if (IsShown) HidePanel();
-        else if (Environment.TickCount64 - _deactivatedAt > 350) ShowPanel();
-    }
-
-    internal void RecalculateLayoutForVerification() => PositionPanel();
-
-    private void PositionPanel(bool useCursor = false)
-    {
-        if (_positioning || _closing) return;
-        _positioning = true;
-        try
-        {
-        if (useCursor) GetCursorPos(out _anchorCursor);
-        var currentDisplay = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest);
-        var display = useCursor ? DisplayArea.GetFromPoint(new PointInt32(_anchorCursor.X, _anchorCursor.Y), DisplayAreaFallback.Nearest) : currentDisplay;
-        if (currentDisplay.DisplayId != display.DisplayId) AppWindow.Move(new PointInt32(display.WorkArea.X + 12, display.WorkArea.Y + 12));
-        double scale = GetDpiForWindow(_hwnd) / 96d;
-        if (scale < .5) scale = Root.XamlRoot?.RasterizationScale ?? 1;
-        var work = display.WorkArea;
-        int gap = Math.Max(1, (int)Math.Round(12 * scale));
-        int width = Math.Min((int)Math.Round(360 * scale), Math.Max(1, work.Width - gap * 2));
-        var outerSize = AppWindow.Size;
-        var clientSize = AppWindow.ClientSize;
-        int nonClientWidth = Math.Max(0, outerSize.Width - clientSize.Width);
-        int nonClientHeight = Math.Max(0, outerSize.Height - clientSize.Height);
-        // Borderless windows may retain a native inset; XAML measures only the client area.
-        double clientWidth = Math.Max(1, width - nonClientWidth) / scale;
-        double innerWidth = Math.Max(1, clientWidth - BodyScroll.Margin.Left - BodyScroll.Margin.Right);
-        var available = new Windows.Foundation.Size(innerWidth, double.PositiveInfinity);
-        ToolbarSurface.Measure(new Windows.Foundation.Size(clientWidth, double.PositiveInfinity)); PanelBody.Measure(available);
-        double chromeHeight = ToolbarSurface.DesiredSize.Height + BodyScroll.Margin.Top + BodyScroll.Margin.Bottom;
-        double desiredHeight = chromeHeight + PanelBody.DesiredSize.Height;
-        int height = Math.Min((int)Math.Ceiling(desiredHeight * scale) + nonClientHeight, Math.Max(1, work.Height - gap * 2));
-        double clientHeight = Math.Max(0, height - nonClientHeight) / scale;
-        IsContentScrollable = PanelBody.DesiredSize.Height > Math.Max(0, clientHeight - chromeHeight) + .5;
-        LayoutMetrics = (desiredHeight, width, height, work.Width, work.Height, scale);
-        // Follow the screen that contains the tray click, including negative virtual-screen coordinates.
-        bool topTaskbar = work.Y > display.OuterBounds.Y && _anchorCursor.Y <= work.Y;
-        bool leftTaskbar = work.X > display.OuterBounds.X && _anchorCursor.X <= work.X;
-        int x = leftTaskbar ? work.X + gap : work.X + work.Width - width - gap;
-        int y = topTaskbar ? work.Y + gap : work.Y + work.Height - height - gap;
-        x = Math.Clamp(x, work.X, work.X + Math.Max(0, work.Width - width));
-        y = Math.Clamp(y, work.Y, work.Y + Math.Max(0, work.Height - height));
-        if (AppWindow.Position.X != x || AppWindow.Position.Y != y || AppWindow.Size.Width != width || AppWindow.Size.Height != height)
-            AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
-        }
-        finally { _positioning = false; }
     }
 
     internal void ShowError(string message) { ErrorBar.Message = message; ErrorBar.IsOpen = true; if (IsShown) PositionPanel(); }
@@ -556,6 +510,7 @@ public sealed partial class MainWindow : Window
     {
         if (value && !_refreshing)
         {
+            _refreshFocusInterrupted = false;
             var editor = _numberEditors.Values.FirstOrDefault(HasFocusWithin);
             if (editor is not null) _refreshDraft = (AutomationProperties.GetAutomationId(editor), editor.Text, editor.SelectionStart, editor.SelectionLength);
         }
@@ -568,9 +523,10 @@ public sealed partial class MainWindow : Window
             {
                 editor.Text = draft.Text;
                 editor.Select(Math.Min(draft.Start, editor.Text.Length), Math.Min(draft.Length, Math.Max(0, editor.Text.Length - draft.Start)));
-                if (IsShown) editor.Focus(FocusState.Programmatic);
+                if (IsShown && !_panelFocusPending && !_refreshFocusInterrupted) editor.Focus(FocusState.Programmatic);
             }
         }
+        if (!value) QueuePendingPanelFocus();
         QueueLayout();
     }
 
@@ -581,6 +537,8 @@ public sealed partial class MainWindow : Window
         RefreshProgress.IsActive = _refreshing;
         RefreshProgress.Visibility = _refreshing ? Visibility.Visible : Visibility.Collapsed;
         RefreshMenuItem.IsEnabled = !_refreshing;
+        RefreshMoreMenuItem.IsEnabled = !_refreshing;
+        UpdateToolbar(_controller.VisibleMonitors.ToList());
         LinkButton.IsEnabled = !_refreshing;
         if (_emptyMessage is not null) _emptyMessage.Text = _refreshing ? T("GENERIC_DETECTING_DISPLAYS", "Detecting displays…") : T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings.");
     }
@@ -588,20 +546,23 @@ public sealed partial class MainWindow : Window
     internal async Task FlushForVerificationAsync()
     {
         if (!(_controller.IsSmokeTest && _controller.IsDemo)) throw new InvalidOperationException("Tray input verification requires isolated demo smoke-test mode.");
-        await FlushAsync();
         long deadline = Environment.TickCount64 + 5000;
-        while (_flushing && Environment.TickCount64 < deadline) await Task.Delay(10);
-        if (_flushing) throw new TimeoutException("The tray input queue did not complete.");
+        do
+        {
+            if (!_flushing) await FlushAsync();
+            else await Task.Delay(10);
+        } while ((_flushing || _pending.Count > 0 || _pendingFeatures.Count > 0) && Environment.TickCount64 < deadline);
+        if (_flushing || _pending.Count > 0 || _pendingFeatures.Count > 0) throw new TimeoutException("The tray input queue did not complete.");
     }
 
-    internal void CloseForExit() { _closing = true; _debounce.Stop(); Close(); }
+    internal void CloseForExit() { _closing = true; _debounce.Stop(); _popupFocusWatch.Stop(); _controller.SetTrayPanelVisible(false); Close(); }
     private void Link_Click(object sender, RoutedEventArgs e) { _controller.Settings.LinkedBrightness = LinkButton.IsChecked == true; _controller.SaveSettings(); }
     private async void Power_Click(object sender, RoutedEventArgs e) => await _controller.PowerOffAsync("all");
     private void Settings_Click(object sender, RoutedEventArgs e) => _controller.OpenSettings();
     private async void Refresh_Click(object sender, RoutedEventArgs e) { if (!_refreshing) await _controller.RefreshAsync(); }
     private async void Root_KeyDown(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == VirtualKey.Escape) { HidePanel(); e.Handled = true; }
+        if (e.Key == VirtualKey.Escape) { DismissFromKeyboard(); e.Handled = true; }
         else if (e.Key == VirtualKey.F5) { e.Handled = true; if (!_refreshing) await _controller.RefreshAsync(); }
     }
     private static string T(string key, string fallback) => LocalizationService.Get(key, fallback);
@@ -612,8 +573,6 @@ public sealed partial class MainWindow : Window
         _ => value.ToString()
     };
 
-    [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
-    [DllImport("user32.dll")] private static extern bool GetCursorPos(out Point point);
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
     [DllImport("user32.dll")] private static extern bool SetForegroundWindow(nint hwnd);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint GetWindowLongPtr(nint hwnd, int index);

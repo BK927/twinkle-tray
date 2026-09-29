@@ -1,17 +1,50 @@
 # Twinkle Tray Native: UI layout and verification
 
-Twinkle Tray Native retains the upstream navigation order, monitor controls and settings format. Version 0.3.0 builds on the responsive settings work from 0.2.2 and aligns the tray structure with the original source. The local 0.3.0 acceptance run passed; the package has not yet been released and these changes have no completed CI result yet.
+Twinkle Tray Native retains the upstream navigation order, monitor controls and settings format. Version 0.3.1 refines the flyout surface and window/input lifecycle. The local Windows x64 run passed 54 core tests and the native GUI/runtime/UI/IPC suite described below. Earlier runs remain historical evidence. Local reports are distinct from the version-specific results in [GitHub Actions](https://github.com/BK927/twinkle-tray-native/actions) and packages in [releases](https://github.com/BK927/twinkle-tray-native/releases).
 
 ## Layout and interaction
 
 - Shared system-theme styles use 14 DIP body text, 13 DIP secondary text, 28 DIP page headings and 32 DIP toolbar buttons. Theme and high-contrast brushes retain the Windows accent and contrast choices; no fonts are installed.
 - The tray remains 360 DIP wide. Its rendered content determines the height, bounded by the display work area. Long names have tooltips, large device lists scroll, and routine value refreshes retain existing slider controls.
-- Windows 11 style places its toolbar below the monitor controls; Windows 10 style keeps the toolbar above them. Brightness numbers sit beside their sliders and accept direct input. Linked mode shows one brightness slider, while additional monitor features use a compact layout. Unlinking restores the individual controls.
+- Windows 11 style places its toolbar below the monitor controls; Windows 10 style keeps the toolbar above them. The flyout forms one coherent surface without a separate footer fill or hard divider. Brightness numbers use 14 DIP native bordered TextBoxes beside their sliders, and power is available from More. Linked mode shows one brightness slider, while additional monitor features use a compact layout. Unlinking restores the individual controls.
 - Settings begin at 1040×740 DIP. Below 960 DIP the navigation becomes compact; below 600 DIP of row space, controls move under their labels. Related settings have section headings, and monitor, schedule and profile editors have collapsible summary cards.
 - Rebuilding a settings page preserves expansion, scroll position, focused editor and uncommitted text. Invalid field values have nearby error messages and do not replace the last valid saved value.
 - The brightness overlay shares the panel's visual conventions and bounds its content to the display work area. Unsupported backdrops and high contrast use a solid background.
 
-## Verified local 0.3.0 result
+## 0.3.1 lifecycle and input changes
+
+- Demo substitutes simulated display hardware and keeps settings isolated, while using the production flyout lifecycle: outside interaction dismisses it and it stays out of Alt+Tab. Only the isolated smoke harness may temporarily hold a window open to measure controls; ordinary demo mode does not bypass dismissal.
+- Positioning uses the actual notification-area icon bounds, including keyboard activation. The panel restores an available control's focus, and Escape dismisses it and returns focus to the tray.
+- A pointer-gesture token identifies a click that both dismisses the panel and activates its tray icon. The activation from that same click is consumed. A new click is independent; there is no fixed 350 ms suppression interval.
+- Inside the panel, wheel brightness adjustment belongs to sliders. Labels, numeric editors and selection controls do not propagate wheel input into brightness changes. Partial deltas accumulate per target until a full **120-unit detent** is available, preserving high-resolution input and direction changes.
+- Slider dragging sends updates throughout the gesture at a bounded rate, instead of waiting solely for release. The native UI test supplied continuing slider inputs and observed an update before the sequence ended, followed by the final value.
+- Settings editor restoration waits for card animations and stable content/viewport geometry before releasing the focus-scroll guard. The saved 160 DIP scroll position returned to exactly 160 DIP, with the selected text and focus retained. Closed windows also ignore late theme/backdrop and queued layout work.
+
+## Local 0.3.1 result
+
+The Windows x64 run passed **54 core tests, 11 settings pages, 44 simulated runtime assertions (including 20 automation regressions), 144 layout cases, 53 interaction/popup checks and 11 IPC groups**. It generated **14 preview PNGs**. The UI report has no errors, zero hardware writes and zero user-settings writes.
+
+<!-- 0.3.1 RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
+The complete run finished at **2026-09-29 11:05:01.7682965 UTC**. Evidence is in `artifacts/test-results/20260929T110241471-1a85b9a69aa44967b05d8f227bbac56e/{smoke-test,ui-layout-test,integration-test}.json`; all three reports have `Passed: true`.
+
+The 53 UI checks include the retained settings/layout/numeric-control checks, continuous slider updates, gesture-state cases and native flyout lifecycle checks. Their input sources are deliberately distinguished:
+
+| Coverage | Method and observed result |
+| --- | --- |
+| Dismissal when another window activates | A real owned probe window used `Window.Activate`. Its foreground activation was observed at 9ms, before the subsequent explicit foreground request; the panel hid within 109ms. Actual panel deactivation and probe activation events were recorded. No external mouse click or synthetic deactivation event was used. |
+| More popup focus and dismissal | A real `MenuFlyout` opened, received keyboard focus and closed while its parent remained open. No menu command or hardware action was invoked. |
+| Gesture suppression and immediate reopening | Pure token-state cases and simulated requests through production methods verified release-before-activation, consuming the same click once and allowing unrelated/new activations. These are not physical tray-click tests. |
+| Keyboard opening and dismissal | Actual XAML focus selected the first enabled control and survived refresh/reopening. The production keyboard-dismiss method hid the panel and discarded an unsaved draft; physical Escape was not injected. Cyclic navigation and switcher exclusion were configuration checks, not a physical Tab/Alt+Tab sequence. |
+| Icon-anchor placement on another display | A synthetic anchor selected a different display from the cursor among two available displays. The actual native window matched that display and fit its work area at 450×303 pixels. The cursor was not moved; this does not test physical notification-icon activation. |
+| Wheel and dragging | The 54-test core suite covers 120-unit wheel-delta accumulation. Continuing values through the native slider path produced throttled updates before the gesture ended. Physical pointer dragging and end-to-end wheel routing were not injected in this run. |
+
+Computer Use could not find the production-equivalent demo tool window as a target after two inventory checks, so separate pointer/physical-key verification was not performed. **Physical tray clicks, Escape and end-to-end wheel routing remain unverified.** The old 0.3.0 name-row wheel check below does not validate the new slider-only routing.
+
+Representative new previews of two displays, linked mode, Windows 10 style and six displays in the light theme were visually reviewed; no additional clipping was observed in those captures. The ZIP/MSIX package executable and three managed assemblies also matched the verified build's SHA-256 values.
+
+All 14 previews report an observed host rasterization scale of **1.5 (150%)**. The requested 100/125/150/200% outputs are relative bitmap scales, not separate Windows DPI sessions. Actual high contrast was off. Native DPI changes, high contrast and an installed upstream live-panel comparison remain unverified; the upstream comparison is source-based.
+
+## Historical local 0.3.0 result
 
 The Windows x64 run passed **46 core tests, 11 settings pages, 44 simulated runtime assertions (including 20 automation regressions), 144 layout cases, 36 interaction/popup checks and 11 IPC groups**. It generated **14 preview PNGs**. The UI report records zero hardware writes, zero user-settings writes and no errors.
 
@@ -22,9 +55,9 @@ The 36 UI checks retain the six settings-editing checks and 18 tray/OSD layout c
 
 Representative new captures were visually reviewed for the Windows 11 bottom toolbar, values beside sliders, the single linked slider and compact extra controls. The upstream comparison used its source; **an installed upstream panel was not inspected live**. No pixel-for-pixel or comprehensive glyph-quality claim follows from this review.
 
-A separate interactive demo check confirmed wheel input over the slider (72→67) and monitor-name row (67→72), numeric entry of 63 with Enter while the other display stayed at 48, and F5 refresh preserving the values. These observations used simulated displays and did not write real monitor hardware.
+A separate 0.3.0 interactive demo check confirmed wheel input over the slider (72→67) and monitor-name row (67→72), numeric entry of 63 with Enter while the other display stayed at 48, and F5 refresh preserving the values. These observations used simulated displays and did not write real monitor hardware. Row-wide wheel handling is historical behavior and is intentionally replaced by slider-only handling in 0.3.1.
 
-Every preview reports an observed host rasterization scale of **1.5 (150%)**. Requested 100/125/150/200% outputs are relative bitmap scales, not separate Windows DPI sessions. Actual high contrast was off and was not exercised. These environment limits also apply to the new passing run.
+Every 0.3.0 preview reports an observed host rasterization scale of **1.5 (150%)**. Requested 100/125/150/200% outputs are relative bitmap scales, not separate Windows DPI sessions. Actual high contrast was off and was not exercised. These results do not establish 0.3.1 environment coverage.
 
 ## Historical 0.2.2 result
 
@@ -45,7 +78,7 @@ Run the existing native integration command after publishing:
 ./winui/test-app.ps1 -AppPath ./winui/artifacts/win-x64/TwinkleTray.WinUI.exe
 ```
 
-The smoke run uses isolated demo instances and fresh in-memory fixtures. In addition to runtime and IPC checks, it produces `ui-layout-test.json` for settings layouts, state-preservation checks, input validation and tray/overlay layouts. Preview PNGs are kept under `test-fixtures/ui-previews/`; neither these fixtures nor test reports are shipped in the portable ZIP or MSIX.
+The smoke run uses isolated demo instances and fresh in-memory fixtures. Measurement may temporarily keep the flyout open through a smoke-only seam; lifecycle acceptance must exercise the ordinary dismissal path with that hold released. In addition to runtime and IPC checks, it produces `ui-layout-test.json` for settings layouts, state-preservation checks, input validation and tray/overlay layouts. Preview PNGs are kept under `test-fixtures/ui-previews/`; neither these fixtures nor test reports are shipped in the portable ZIP or MSIX.
 
 The layout matrix covers all eleven settings pages, Korean and English, light and dark themes, and 640×480, 1040×740 and 1440×900 DIP viewports. Populated fixtures include long names and multiple monitors; a separate empty-state pass verifies the same pages without devices or saved entries.
 

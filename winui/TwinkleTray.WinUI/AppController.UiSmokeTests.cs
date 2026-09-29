@@ -22,6 +22,7 @@ internal sealed partial class AppController
         string originalLanguage = LocalizationService.CurrentLanguage;
         var originalFeatures = _features.ToDictionary();
         var overlay = new OverlayWindow();
+        _window.SetVerificationHoldOpen(true);
         try
         {
             foreach (string theme in new[] { "light", "dark" })
@@ -79,6 +80,7 @@ internal sealed partial class AppController
                     UiVisualVerification.RecordProgress(previews, $"Popup checks complete: {theme}, {count} displays", result);
                 }
             await VerifyTrayEditingAsync(result, previews);
+            await VerifyFlyoutLifecycleAsync(result, previews);
         }
         catch (Exception exception) { result.Errors.Add(exception.ToString()); }
         finally
@@ -87,6 +89,7 @@ internal sealed partial class AppController
             overlay.Close(); Settings = originalSettings; _monitors = originalMonitors;
             _features.Clear(); foreach (var pair in originalFeatures) _features[pair.Key] = pair.Value;
             LocalizationService.Configure(originalLanguage); _window.ApplySettings(); _window.HidePanel();
+            _window.SetVerificationHoldOpen(false);
             File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "ui-layout-test.json"), JsonSerializer.Serialize(new
             {
                 result.Passed, NativeWinUI = true, ViewportSimulation = true, WindowsDpiChanged = false,
@@ -202,6 +205,18 @@ internal sealed partial class AppController
         _window.SetRefreshing(false); _window.RenderMonitors(); await UiVisualVerification.SettleAsync(root);
         result.Checks.Add(new("Refresh blocks a pending input-source selection event", refreshChoiceBlocked && choice.IsEnabled && choice.SelectedItem is ComboBoxItem item && (uint)item.Tag == 17,
             $"Blocked while refreshing={refreshChoiceBlocked}; restored input={Features(_monitors[0].Id).Single(feature => feature.Code == 0x60).Current}"));
+
+        firstSlider = Element<Slider>("brightness:ui-fixture:0");
+        bool updatedDuringInput = false;
+        for (int step = 0; step < 10; step++)
+        {
+            firstSlider.Value = 20 + step;
+            await Task.Delay(30);
+            if (step < 9 && LogicalBrightness(_monitors[0]) < 40) updatedDuringInput = true;
+        }
+        await _window.FlushForVerificationAsync();
+        result.Checks.Add(new("Continuous slider input updates before the gesture ends and keeps the final value", updatedDuringInput && Math.Abs(LogicalBrightness(_monitors[0]) - 29) < .01,
+            $"An update arrived while inputs were continuing={updatedDuringInput}; final brightness={LogicalBrightness(_monitors[0])}"));
     }
 
     private static async Task<UiCheck> VerifyObservedPopupAsync(Window window, string scrollName, int expectedWidth, int expectedHeight, bool expectedToFit)

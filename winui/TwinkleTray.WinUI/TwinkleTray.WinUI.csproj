@@ -20,7 +20,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <AssemblyTitle>Twinkle Tray Native</AssemblyTitle>
     <Product>Twinkle Tray Native</Product>
     <Description>Twinkle Tray Native — community Windows brightness control built with WinUI 3</Description>

@@ -48,7 +48,8 @@ internal sealed partial class AppController
     {
         _window = new MainWindow(this);
         _tray = new TrayService();
-        _tray.Clicked += () => { _window.TogglePanel(); if (_window.IsShown) _ = RefreshAsync(); };
+        _tray.Activated += activation => { _window.TogglePanel(activation); if (_window.IsShown) _ = RefreshAsync(); };
+        _tray.PanelRequested += activation => { _window.ShowPanel(activation); _ = RefreshAsync(); };
         _tray.SettingsRequested += OpenSettings;
         _tray.RefreshRequested += () => _ = RefreshAsync();
         _tray.ExitRequested += Quit;
@@ -101,6 +102,15 @@ internal sealed partial class AppController
             finally { Quit(); }
         }
     }
+
+    internal bool TryGetTrayIconBounds(out Windows.Graphics.RectInt32 bounds)
+    {
+        bounds = default;
+        return _tray is not null && _tray.TryGetIconBounds(out bounds);
+    }
+    internal void ReturnFocusToTray() => _tray?.ReturnFocusToIcon();
+    internal uint CurrentTrayPointerGesture => _tray?.CurrentPointerGesture ?? 0;
+    internal void SetTrayPanelVisible(bool visible) => _tray?.SetPanelVisible(visible);
 
     public MonitorSettings Preferences(string id)
     {

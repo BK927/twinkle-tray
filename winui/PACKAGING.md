@@ -5,14 +5,14 @@ The supported release target is Windows x64. macOS, Apple hardware and Windows A
 Run `build.ps1` first, then create a portable ZIP and an unsigned MSIX from the published application:
 
 ```powershell
-./winui/package.ps1 -Architecture x64 -Version 0.3.0
+./winui/package.ps1 -Architecture x64 -Version 0.3.1
 ```
 
 The output is saved in `winui/artifacts/packages/`, with SHA256 checksums for the selected architecture. PDB files and `smoke-test.json` are excluded. `-SkipMsix` produces only the portable ZIP. Packaging does not install an application or certificate.
 
-Release archives use the `TwinkleTray-Native-<version>-x64` prefix. **The 0.3.0 release has not been published yet.** Future published packages belong to [BK927/twinkle-tray-native](https://github.com/BK927/twinkle-tray-native/releases), with `winui-v<version>` tags retained for updater compatibility and a `SHA256SUMS.txt` file alongside the assets. The local verification results do not establish that a release or CI artifact has been uploaded.
+Release archives use the `TwinkleTray-Native-<version>-x64` prefix, for example `TwinkleTray-Native-0.3.1-x64.zip`. Published packages are listed under [BK927/twinkle-tray-native releases](https://github.com/BK927/twinkle-tray-native/releases); CI results and uploaded artifacts belong to their matching [Actions run](https://github.com/BK927/twinkle-tray-native/actions). The `winui-v<version>` tag format and `SHA256SUMS.txt` are retained for updater compatibility. A local verification report does not establish publication.
 
-## Moving from 0.2.x to 0.3.0
+## Moving from 0.2.x to the Native releases
 
 Close the old application and install the complete new x64 build manually. Until a portable ZIP is published, build and package it locally using the commands above. The first transition from the old repository must be installed manually: existing 0.2.x binaries pin the old update location and archive naming, so repository redirects alone do not guarantee an automatic upgrade.
 

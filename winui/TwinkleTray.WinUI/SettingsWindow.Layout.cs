@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Windowing;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -26,6 +27,7 @@ public sealed partial class SettingsWindow
     private bool _viewRestorePending;
     private bool _adjustingWindow;
     private bool _accessibilitySubscribed;
+    private bool _closing;
     private int _renderVersion;
     private int _restoringVersion = -1;
     private bool _focusScrollingBeforeRestore = true;
@@ -50,6 +52,7 @@ public sealed partial class SettingsWindow
         }
         Closed += (_, _) =>
         {
+            _closing = true;
             ++_renderVersion;
             _viewRestorePending = false;
             _restoringView = false;
@@ -64,6 +67,7 @@ public sealed partial class SettingsWindow
 
     private void ApplySettingsBackdrop()
     {
+        if (_closing) return;
         var acrylic = _settings.WindowsStyle == "win10";
         if (!_settings.UseAcrylic || _accessibility.HighContrast || (acrylic ? !DesktopAcrylicController.IsSupported() : !MicaController.IsSupported()))
         {
@@ -78,6 +82,7 @@ public sealed partial class SettingsWindow
 
     private void UpdateNavigationLayout(double width)
     {
+        if (_closing) return;
         var compact = width > 0 && width < 960;
         var target = compact ? NavigationViewPaneDisplayMode.LeftCompact : NavigationViewPaneDisplayMode.Left;
         if (Navigation.PaneDisplayMode != target)
@@ -91,7 +96,7 @@ public sealed partial class SettingsWindow
 
     private void EnsureMinimumWindowSize()
     {
-        if (_adjustingWindow) return;
+        if (_closing || _adjustingWindow) return;
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var dpi = GetDpiForWindow(hwnd);
         var scale = dpi == 0 ? 1d : dpi / 96d;
@@ -384,37 +389,66 @@ public sealed partial class SettingsWindow
             if (state?.FocusKey is string focusKey && state.Drafts.TryGetValue(focusKey, out var draft) &&
                 _pageEditors.TryGetValue(focusKey, out var focus) && focus is TextBox input)
                 input.Select(Math.Min(draft.Start, input.Text.Length), Math.Min(draft.Length, Math.Max(0, input.Text.Length - draft.Start)));
-            RestorePageScroll(version, state?.Offset ?? 0);
+            RestorePageScroll(version, state?.Offset ?? 0, state?.FocusKey is not null || state?.Offset > 0 || _revealCard is not null);
         });
     }
 
-    private void RestorePageScroll(int version, double savedOffset)
+    private bool HasActiveCardAnimations()
+    {
+        foreach (var card in _pageEditors.Values.OfType<Expander>())
+        {
+            if (!card.IsLoaded || VisualTreeHelper.GetChildrenCount(card) == 0) return true;
+            if (VisualTreeHelper.GetChild(card, 0) is not FrameworkElement templateRoot) continue;
+            var groups = VisualStateManager.GetVisualStateGroups(templateRoot);
+            for (var i = 0; i < groups.Count; i++)
+                if (groups[i].CurrentState?.Storyboard?.GetCurrentState() == ClockState.Active) return true;
+        }
+        return false;
+    }
+
+    private void RestorePageScroll(int version, double savedOffset, bool restoreEditorView)
     {
         // ScrollViewer's extent can still describe the previous page after its new
         // content has loaded. Expanded templates can also grow over several frames.
         // Do not clamp a saved offset to that transient extent or declare completion
-        // before the asynchronous ChangeView has actually moved the viewport.
+        // before the asynchronous ChangeView has actually moved the viewport. A
+        // restored editor also waits for card animations: their transforms can
+        // move the focused input after the extent has already stopped changing.
         var timer = DispatcherQueue.CreateTimer();
         timer.Interval = TimeSpan.FromMilliseconds(16);
         timer.IsRepeating = true;
         var elapsed = System.Diagnostics.Stopwatch.StartNew();
         double lastTarget = double.NaN;
+        double lastExtent = double.NaN, lastViewport = double.NaN, lastContentHeight = double.NaN;
+        TimeSpan? stableSince = null;
         int stableFrames = 0;
         void Tick()
         {
             if (_renderVersion != version) { timer.Stop(); return; }
             Root.UpdateLayout();
             double available = PageScrollViewer.ScrollableHeight;
-            bool expired = elapsed.Elapsed >= TimeSpan.FromSeconds(1);
+            double extent = PageScrollViewer.ExtentHeight;
+            double viewport = PageScrollViewer.ViewportHeight;
+            double contentHeight = PageContent.ActualHeight + PageContent.Margin.Top + PageContent.Margin.Bottom;
+            bool expired = elapsed.Elapsed >= TimeSpan.FromMilliseconds(1500);
             if (!expired && (PageScrollViewer.ViewportHeight <= 0 ||
                 (available + .5 < savedOffset && elapsed.Elapsed < TimeSpan.FromMilliseconds(500)))) return;
 
             double target = Math.Clamp(savedOffset, 0, available);
             bool reached = Math.Abs(PageScrollViewer.VerticalOffset - target) <= .5;
-            stableFrames = reached && Math.Abs(lastTarget - target) <= .5 ? stableFrames + 1 : 0;
+            bool geometryStable = Math.Abs(extent - lastExtent) <= .5 && Math.Abs(viewport - lastViewport) <= .5 &&
+                Math.Abs(contentHeight - lastContentHeight) <= .5 && Math.Abs(extent - Math.Max(viewport, contentHeight)) <= 1;
+            bool stable = reached && Math.Abs(lastTarget - target) <= .5 &&
+                (!restoreEditorView || geometryStable && !HasActiveCardAnimations());
+            stableFrames = stable ? stableFrames + 1 : 0;
+            stableSince = stable ? stableSince ?? elapsed.Elapsed : null;
             lastTarget = target;
+            lastExtent = extent; lastViewport = viewport; lastContentHeight = contentHeight;
             if (!reached) PageScrollViewer.ChangeView(null, target, null, true);
-            if (!expired && stableFrames < 2) return;
+            // New pages retain the quick path. Saved editor views need a short
+            // quiet interval after the final layout/animation/scroll operation.
+            if (!expired && (stableFrames < 2 || restoreEditorView &&
+                (stableSince is null || elapsed.Elapsed - stableSince.Value < TimeSpan.FromMilliseconds(80)))) return;
 
             timer.Stop();
             _viewRestorePending = false;

@@ -124,6 +124,7 @@ internal sealed class OverlayWindow : Window
 
     private void ApplyBackdrop()
     {
+        if (_closed) return;
         bool acrylic = _settings?.UseAcrylic == true && !_accessibility.HighContrast && Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported();
         SystemBackdrop = acrylic ? SystemBackdrop ?? new DesktopAcrylicBackdrop() : null;
         _surface.Visibility = acrylic ? Visibility.Collapsed : Visibility.Visible;

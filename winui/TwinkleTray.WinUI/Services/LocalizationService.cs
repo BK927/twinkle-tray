@@ -92,6 +92,7 @@ public static class LocalizationService
 
     private static readonly Dictionary<string, string> Korean = new()
     {
+        ["NATIVE_MORE"] = "더 보기",
         ["NATIVE_APPEARANCE"] = "모양과 언어",
         ["NATIVE_BRIGHTNESS_SHORTCUTS"] = "밝기 연동과 스크롤",
         ["NATIVE_OVERLAY_SECTION"] = "밝기 알림",
