@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Semantic version matching the WinUI project (for example 0.2.1 or 0.3.0-beta.1)'
+        description: 'Semantic version matching the WinUI project (for example 0.2.2 or 0.3.0-beta.1)'
         required: true
-        default: '0.2.1'
+        default: '0.2.2'
 
 permissions:
   contents: read

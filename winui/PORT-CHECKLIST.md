@@ -1,8 +1,14 @@
-# WinUI 3 port 0.2.1: source audit and validation checklist
+# WinUI 3 port 0.2.2: source audit and validation checklist
 
 This is a feature audit, not a claim that every monitor or Windows configuration has been tested. The reference is upstream commit [`e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e`](https://github.com/xanderfrangos/twinkle-tray/tree/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e). Electron sources are preserved alongside the native implementation.
 
 **한국어:** 원본의 사용자 기능을 기준으로 이식 범위와 검증 범위를 구분했습니다. `Implemented`는 코드가 있다는 뜻이며 실제 장치 검증을 뜻하지 않습니다. 아래 차이점과 미검증 항목이 남아 있으므로 픽셀 단위 동일성이나 모든 하드웨어에서의 완전한 동작을 보장하는 표가 아닙니다.
+
+**Verification scope:** The **0.2.2** Windows x64 core, native GUI, UI and IPC results are recorded below. Physical-device results and the linked x64/ARM64 CI build remain explicitly identified as the **0.2.1 historical baseline**. The 0.2.2 UI run did not repeat hardware writes or change Windows DPI/high-contrast settings.
+
+## 0.2.2 UI changes
+
+The existing navigation and settings schema are retained. Settings rows adapt to narrower windows, related options have section headings, and monitor/schedule/profile editors use collapsible summary cards. Page rebuilds preserve expansion, scrolling, focused text and selection; inline field validation retains the last valid saved value. The tray and overlay use content-based sizing, shared system-theme styles and solid backgrounds when backdrops are unavailable or high contrast is active. Korean labels and key names were improved. **144 actual arranged-layout cases and 24 interaction/popup checks passed** in the 0.2.2 native x64 app. See [UI-POLISH.md](UI-POLISH.md) for the evidence, repeatable checks and limits.
 
 Status meanings:
 
@@ -30,13 +36,13 @@ The audit examined these upstream entry points rather than only the README featu
 
 | User feature | Native implementation | Status / verification boundary |
 | --- | --- | --- |
-| Notification-area app, click-to-open flyout, outside-click dismissal | `TrayService`, `MainWindow` | Implemented; 11 settings pages passed startup smoke. Flyout and Korean General, DDC/CI, profile editor and sensor pages were inspected at normal size. Direct initial `--demo --settings` display passed after the root-loaded sizing fix. |
+| Notification-area app, click-to-open flyout, outside-click dismissal | `TrayService`, `MainWindow` | Implemented; 11 settings pages passed 0.2.2 startup smoke. Light/dark flyout and OSD work-area bounds, real scrolling and persistent slider controls passed with 1/6/12 simulated displays. Historical 0.2.1 direct initial `--demo --settings` display also passed after the root-loaded sizing fix. Outside-click behavior is not part of the new automated layout matrix. |
 | Per-display brightness, percentage, name and monitor icon | `MainWindow`, `BrightnessControl` | Implemented. Native controls preserve the original arrangement; typography, animation and spacing are WinUI behavior. |
 | Linked monitor sliders; independent levels | `AppController.TrySetAsync`, linked settings | Implemented; simulated set-all/per-monitor offset produced the expected 60/65 levels, and linked-hotkey runtime regression passed. |
 | Monitor name, order and hidden displays | `MonitorSettings`, monitor settings page | Implemented. Native stable IDs can differ from Electron IDs. |
 | Brightness minimum/maximum and multipoint calibration | `BrightnessCalibration` | Verified core: endpoint mapping, inverse, duplicate points, plateaus and clamping. |
 | Slider name/value visibility and glyph | `MonitorSettings`, `MainWindow` | Implemented native customization; these are additions, not claimed imports of upstream settings. |
-| Light/dark/system theme; Windows 10/11 appearance; acrylic | `MainWindow`, settings UI, `OverlayWindow` | Implemented approximation. Electron CSS and its native-animation settings are not reproduced byte-for-byte. |
+| Light/dark/system theme; Windows 10/11 appearance; acrylic | `MainWindow`, settings UI, `OverlayWindow` | Implemented approximation. Korean/English light/dark layout combinations passed in 0.2.2; observed heading/background colors were checked. Actual high contrast and Windows 10 remain unverified. Electron CSS and its native-animation settings are not reproduced byte-for-byte. |
 | Original tray icon choices and system-theme updates | `TrayService`, original icon assets | Implemented. Windows notification area controls icon placement/visibility. |
 | Tray mouse-wheel and slider wheel controls, inversion, step size | `TrayService`, `MainWindow` | Implemented; low-level wheel-hook behavior needs an interactive desktop. |
 | Dedicated brightness OSD, timeout, safe/aggressive policy, per-profile suppression | `OverlayWindow`, automation controller | Implemented as a separate WinUI window. It is not a pixel-identical copy of the Electron OSD. Exclusive fullscreen behavior remains Windows/application-dependent. |
@@ -97,7 +103,7 @@ The audit examined these upstream entry points rather than only the README featu
 | Native export/import/reset and pre-import backup | Advanced UI/controller | Implemented; file-picker/reset flows need interactive validation. Export includes the UDP key. |
 | Update checking, release channel, release notes | `UpdateService`, updates UI, `SemanticVersion` | Implemented against BK927 WinUI release tags. [SemVer 2.0](https://semver.org/) precedence is tested for beta progression, stable promotion, numeric identifiers and ignored build metadata. Live newer-release flow unverified. |
 | Download, checksum verification, staged installation and rollback | `UpdateService` | Implemented for portable installs. Fixture installation file replacement and forced-failure rollback passed. Release selection, download, checksum and extraction passed against a fixture HTTP handler. Live release download, parent-process shutdown and restart together remain unverified; this is not a verified atomic installer. |
-| x64/ARM64 portable distribution | Build/publish/package scripts | The 0.2.1 x64 Release publish passed with zero warnings/errors, and runtime/IPC tests passed on Windows x64. ARM64 builds passed for 0.2.0; a 0.2.1 ARM64 rebuild remains pending. No ARM64 hardware execution has been tested. |
+| x64/ARM64 portable distribution | Build/publish/package scripts | The 0.2.2 native GUI/UI run passed on Windows x64. Historical 0.2.1 x64 and ARM64 build jobs passed for commit `704dac7` in [GitHub Actions run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766). This is not evidence of a 0.2.2 ARM64 build or any ARM64 hardware execution. |
 | MSIX package and startup declaration | `package.ps1`, `StartupService` | Packaging support exists and an unsigned fixture passed package validation. Signing, trusted installation, packaged startup and deployment-channel update behavior need separate validation. This fork does not replace the upstream Microsoft Store identity. |
 | Diagnostics, settings dump and logs | Advanced settings, read-only hardware probe | Implemented. Diagnostics should be reviewed before sharing because IDs, paths or settings can identify a local configuration. |
 
@@ -107,22 +113,42 @@ The audit examined these upstream entry points rather than only the README featu
 - Fine-grained debug switches such as disabling only high-level brightness, disabling only HDR detection, forcing the old accurate/fast DDC worker, manually overriding taskbar gap/edge, disabling throttling or individual upstream event-source strategies do not all have equivalent native switches.
 - Windows monitor IDs and Electron model/instance IDs differ. Identity migration must be reviewed, especially for several displays of the same model or a display moved to a different port.
 - Native settings defaults intentionally do not auto-enable login registration, remote UDP or hardware writes merely by opening a demo or importing a file. Import does not change login registration automatically.
-- Safe OSD/fullscreen handling, third-party taskbar behavior, multiple DPI scales, portrait displays, keyboard navigation, screen readers and high-contrast appearance require visual/interactive acceptance testing beyond source parity.
+- The 0.2.2 layout matrix exercises three DIP viewport sizes at an observed host scale of 1.5. Relative PNG capture scales do not exercise actual DPI switching. Safe OSD/fullscreen handling, third-party taskbar behavior, portrait displays, complete keyboard navigation, screen readers and an actual high-contrast session still require separate acceptance testing.
 - Upstream analytics, its Store identity and its release installer are not reused. The native port has its own release/update channel.
 
 ## Validation record and release gate
 
 See [VERIFICATION.md](VERIFICATION.md) for the Windows x64 0.2.1 acceptance scope, concrete hardware results and regression fixes.
 
+### 0.2.2 Windows x64 GUI, UI and IPC verification
+
+**46/46 core tests passed again.** The native smoke report passed all **11 settings pages and 41 runtime assertions**, including the existing 20 automation regressions. The separate UI report passed **144 arranged-layout cases and 24 interaction/popup checks**, and generated **11 preview PNGs**. The final integration report passed **11 IPC test groups**. Hardware writes and user-settings writes were both zero in the isolated UI fixtures.
+
+<!-- 0.2.2 RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
+The complete run finished at **2026-09-29 08:23:37 UTC**. Evidence: `artifacts/test-results/20260929T082103256-2b6a96d7ea6449edb7cd5dd7ae451a36/{smoke-test,ui-layout-test,integration-test}.json`, each with `Passed: true`. The UI report contains no errors; the integration report records zero hardware writes.
+
+- [x] All 11 settings pages × Korean/English × light/dark × 640×480, 1040×740 and 1440×900 DIP: 132 populated combinations, plus 11 empty pages and one visible inline-error layout.
+- [x] Invalid URL input leaves the last valid setting unchanged and shows an inline error; valid correction commits once.
+- [x] Stable profile-card expansion, page-navigation focus/selection/scroll, active editor selection after monitor refresh, and unsaved drafts across two immediate rebuilds.
+- [x] Light/dark tray and OSD work-area/client bounds and actual scrolling with 1/6/12 simulated displays; routine value refresh keeps the tray control tree.
+- [x] Eleven demo IPC groups covering command delivery, selectors, logical brightness/bounds, malformed-input recovery, help, schedule evaluation, OSD and settings-window commands.
+- [x] Representative PNGs captured and actual dimensions/scale recorded; observed heading/window foreground-background contrast recorded for Korean/English light/dark.
+- [ ] Separate native Windows 100/125/150/200% DPI sessions or cross-monitor DPI transitions. The host was **150% (1.5)**; capture requests of **100/125/150/200%** are relative to that scale, yielding approximately **1.5/1.875/2.25/3 pixels per DIP**.
+- [ ] Actual Windows high-contrast session, complete keyboard/screen-reader accessibility and comprehensive glyph-raster quality acceptance. The report observed high contrast as off; it did not switch modes.
+
+See [UI-POLISH.md](UI-POLISH.md) for how the native controls are exercised and the remaining environment limits.
+
+### Historical 0.2.1 baseline
+
 <!-- RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
-At this audit, **46/46 core tests passed** on .NET 10. They cover the pure algorithms, schema, settings/known-display import, semantic versions and CLI, without reading user settings or writing monitor hardware. The expanded simulated run completed at **2026-09-29 06:41:02 UTC** and passed **11 settings pages, 41 runtime assertions (including 20 automation regressions) and 11 IPC test groups**, with two simulated displays and zero hardware writes. Evidence is in `artifacts/test-results/20260929T064038744-0407eee76f434b2fb704e08b9b3a46f6/{smoke-test,integration-test,automation-regression}.json`; the integration report records SHA-256 hashes for the executable and WinUI/Core/Hardware assemblies. Runtime assertions include fixture update file replacement and rollback after an induced failure. An unsigned MSIX fixture passed package validation; signed installation and the full release-download/process-restart update flow were not tested. See [PACKAGING.md](PACKAGING.md) for signing and MSIX revision details.
+For the historical 0.2.1 audit, **46/46 core tests passed** on .NET 10. They cover the pure algorithms, schema, settings/known-display import, semantic versions and CLI, without reading user settings or writing monitor hardware. The expanded simulated run completed at **2026-09-29 06:41:02 UTC** and passed **11 settings pages, 41 runtime assertions (including 20 automation regressions) and 11 IPC test groups**, with two simulated displays and zero hardware writes. Evidence is in `artifacts/test-results/20260929T064038744-0407eee76f434b2fb704e08b9b3a46f6/{smoke-test,integration-test,automation-regression}.json`; the integration report records SHA-256 hashes for the executable and WinUI/Core/Hardware assemblies. Runtime assertions include fixture update file replacement and rollback after an induced failure. An unsigned MSIX fixture passed package validation; signed installation and the full release-download/process-restart update flow were not tested. See [PACKAGING.md](PACKAGING.md) for signing and MSIX revision details.
 
-Physical-device coverage is limited to the two external displays above on Windows 11 x64. DDC brightness/contrast readback and restoration, controlled gamma writes/restoration and peer isolation passed. No laptop, Apple display or ARM64 device was exercised. Power/input switching, SDR-white-level writes and automatic gamma restoration across device lifecycle events remain outside the verified scope.
+The historical 0.2.1 physical-device coverage is limited to the two external displays above on Windows 11 x64. DDC brightness/contrast readback and restoration, controlled gamma writes/restoration and peer isolation passed. No laptop, Apple display or ARM64 device was exercised. Power/input switching, SDR-white-level writes and automatic gamma restoration across device lifecycle events remain outside the verified scope.
 
-Before calling an expanded release validated, record these separately:
+Historical 0.2.1 acceptance record (checked items are not 0.2.2 results):
 
 - [x] The 0.2.1 x64 Release publish passed with zero warnings/errors; runtime execution was tested on Windows x64.
-- [ ] Rebuild ARM64 for 0.2.1; the previous successful ARM64 build was for 0.2.0.
+- [x] The 0.2.1 x64 and ARM64 CI build jobs passed for `704dac7` in [run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766); this does not establish ARM64 runtime behavior.
 - [x] Expanded `--smoke-test`: all 11 native settings pages and all 41 runtime assertions, including 20 automation regressions, passed in a newly written report.
 - [x] Eleven demo IPC groups, plus UDP command routing/authentication/malformed-input runtime checks; includes selectors, `--UseTime`, logical brightness, bounds, invalid-command recovery and settings-window commands.
 - [x] Korean flyout, General/DDC/CI settings, profile editor and sensors at normal size; direct initial settings-window display.
@@ -135,5 +161,7 @@ Before calling an expanded release validated, record these separately:
 - [ ] Physical-device acceptance for WMI, HDR/SDR writes, Apple HID, sensors, lid, hotplug and wake; gamma automatic restoration on shutdown/route removal/hotplug; ARM64 execution.
 - [x] Portable update file-copy and failure rollback against temporary fixture installations.
 - [ ] Full live release download/update process, plus signed MSIX install/startup/uninstall on a test installation.
+
+The 0.2.2 results above are separate from this historical baseline. Device-specific and deployment gaps remain open even when the native layout and interaction checks pass.
 
 Unchecked means unverified, not necessarily unimplemented. Keep this document synchronized with the actual release evidence and retain unsupported details in the import report.

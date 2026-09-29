@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'ARM64')][string] $Architecture = 'x64',
-    [string] $Version = '0.2.1',
+    [string] $Version = '0.2.2',
     [ValidateRange(0, 65535)][int] $MsixRevision = 0,
     [string] $Publisher = 'CN=BK927',
     [string] $PublishDirectory,
@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($Version -cnotmatch '^(?<base>(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?:-(?<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$') {
-    throw 'Version must be a semantic version, such as 0.2.1 or 0.3.0-beta.1.'
+    throw 'Version must be a semantic version, such as 0.2.2 or 0.3.0-beta.1.'
 }
 $numericVersion = $Matches['base']
 $prerelease = $Matches['pre']
@@ -38,7 +38,7 @@ try {
     # Use the same filtered payload for both formats. Runtime smoke reports and
     # debugging symbols are build evidence, not part of the installed application.
     foreach ($file in Get-ChildItem -LiteralPath $source -File -Recurse) {
-        if ($file.Extension -ieq '.pdb' -or $file.Name -in @('smoke-test.json', 'automation-regression.json')) { continue }
+        if ($file.Extension -ieq '.pdb' -or $file.Name -in @('smoke-test.json', 'automation-regression.json', 'ui-layout-test.json')) { continue }
         $relative = [IO.Path]::GetRelativePath($source, $file.FullName)
         if ($relative.StartsWith('test-fixtures' + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { continue }
         $destination = Join-Path $stage $relative

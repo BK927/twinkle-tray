@@ -30,9 +30,18 @@ public sealed partial class SettingsWindow : Window
         _refreshMonitors = refreshMonitors;
         _actions = actions ?? new SettingsActions();
         InitializeComponent();
+        InitializeSettingsLayout();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
-        Root.Loaded += (_, _) => SetInitialSizeAndPosition();
+        Root.Loaded += (_, _) =>
+        {
+            SetInitialSizeAndPosition();
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                PageContent.UpdateLayout();
+                RestorePageState(_renderVersion);
+            });
+        };
         var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico");
         if (File.Exists(icon)) AppWindow.SetIcon(icon);
         Localize();
@@ -44,8 +53,9 @@ public sealed partial class SettingsWindow : Window
     /// <summary>Called after a fresh monitor scan; preserves the selected settings page.</summary>
     public void UpdateMonitors(IReadOnlyList<MonitorSnapshot> monitors)
     {
+        var unchanged = _monitors.SequenceEqual(monitors);
         _monitors = monitors;
-        if (_page is "monitors" or "features" or "time" or "hotkeys" or "profiles" or "sensors") RenderPage();
+        if (!unchanged && (_page is "monitors" or "features" or "time" or "hotkeys" or "profiles" or "sensors")) RenderPage();
     }
 
     public void ShowStatus(string message)
@@ -59,6 +69,10 @@ public sealed partial class SettingsWindow : Window
         _settings = settings;
         _features.Clear();
         _sensorDevices = [];
+        _pageStates.Clear();
+        _lastFocusKeys.Clear();
+        _viewRestorePending = false;
+        _renderedPage = null;
         Localize();
         ApplyTheme();
         RenderPage();
@@ -78,6 +92,7 @@ public sealed partial class SettingsWindow : Window
             area.Y + (area.Height - height) / 2,
             width,
             height));
+        UpdateNavigationLayout(Root.ActualWidth);
     }
 
     internal int VerifyPagesForSmokeTest()
@@ -106,11 +121,20 @@ public sealed partial class SettingsWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint hwnd);
 
-    private static string T(string key, string fallback) => LocalizationService.Get(key, fallback);
+    private static readonly Dictionary<string, string> LabelKeys = new();
+    private static string T(string key, string fallback)
+    {
+        var text = LocalizationService.Get(key, fallback);
+        LabelKeys[text] = key;
+        return text;
+    }
+    private static string LabelKey(string text) => LabelKeys.GetValueOrDefault(text, text);
 
     private void Localize()
     {
         LocalizationService.Configure(_settings.Language);
+        try { Root.Language = CultureInfo.GetCultureInfo(LocalizationService.CurrentLanguage).Name; }
+        catch (CultureNotFoundException) { Root.Language = "en"; }
         Title = T("SETTINGS_TITLE", "Twinkle Tray Settings");
         WindowTitle.Text = Title;
         GeneralNavigation.Content = T("SETTINGS_SIDEBAR_GENERAL", "General");
@@ -134,34 +158,33 @@ public sealed partial class SettingsWindow : Window
             "dark" => ElementTheme.Dark,
             _ => ElementTheme.Default
         };
-        if (!_settings.UseAcrylic)
-        {
-            SystemBackdrop = null;
-            Root.Background = (Brush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"];
-        }
-        else
-        {
-            Root.Background = null;
-            if (_settings.WindowsStyle == "win10") { if (SystemBackdrop is not DesktopAcrylicBackdrop) SystemBackdrop = new DesktopAcrylicBackdrop(); }
-            else if (SystemBackdrop is not MicaBackdrop) SystemBackdrop = new MicaBackdrop();
-        }
+        ApplySettingsBackdrop();
     }
 
     private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is NavigationViewItem item && item.Tag is string page)
         {
+            if (_page == page && _renderedPage == page) return;
             _page = page;
             RenderPage();
+            if (Navigation.PaneDisplayMode == NavigationViewPaneDisplayMode.LeftCompact) Navigation.IsPaneOpen = false;
         }
     }
 
     private void RenderPage()
     {
-        if (PageContent is null) return;
-        PageContent.Children.Clear();
-        switch (_page)
+        if (PageContent is null || _isRendering) return;
+        CapturePageState();
+        var version = ++_renderVersion;
+        _viewRestorePending = true;
+        _isRendering = true;
+        _cardSummaries.Clear();
+        try
         {
+            PageContent.Children.Clear();
+            switch (_page)
+            {
             case "monitors": RenderMonitors(); break;
             case "features": RenderFeatures(); break;
             case "time": RenderTimeAdvanced(); break;
@@ -173,25 +196,29 @@ public sealed partial class SettingsWindow : Window
             case "updates": RenderUpdates(); break;
             case "about": RenderAbout(); break;
             default: RenderGeneral(); break;
+            }
+            _renderedPage = _page;
+            WrapFieldHeaders(PageContent);
+            _pageEditors = IndexEditors();
         }
+        finally { _isRendering = false; }
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => RestorePageState(version));
     }
 
     private void Heading(string title, string? description = null)
     {
         PageContent.Children.Add(new TextBlock
         {
-            Text = title, FontSize = 28, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6)
+            Text = title, Style = SharedStyle("PageHeadingTextStyle")
         });
         if (!string.IsNullOrEmpty(description))
-            PageContent.Children.Add(Description(description, new Thickness(0, 0, 0, 14)));
+            PageContent.Children.Add(Description(description, new Thickness(0, 0, 0, 8)));
     }
 
     private void RenderGeneral()
     {
         Heading(T("SETTINGS_GENERAL_TITLE", "General"), T("NATIVE_GENERAL_DESCRIPTION", "Personalize Twinkle Tray's appearance and behavior. Changes are saved automatically."));
-        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_STARTUP", "Launch at startup"), null,
-            Toggle(_settings.RunAtStartup, value => { _settings.RunAtStartup = value; Save(); })));
+        Section(T("NATIVE_APPEARANCE", "Appearance"));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_THEME_TITLE", "Theme"), null,
             Choice([("system", T("SETTINGS_GENERAL_THEME_SYSTEM", "System preferences (default)")),
                     ("light", T("SETTINGS_GENERAL_THEME_LIGHT", "Light")),
@@ -200,10 +227,6 @@ public sealed partial class SettingsWindow : Window
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_LANGUAGE_TITLE", "Language"), null,
             Choice(LanguageChoices(),
                 _settings.Language, value => { _settings.Language = value; Localize(); Save(); RenderPage(); })));
-        PageContent.Children.Add(SettingRow(T("PANEL_BUTTON_LINK_LEVELS", "Link levels"), T("NATIVE_LINK_DESCRIPTION", "Adjust all displays together from the brightness panel."),
-            Toggle(_settings.LinkedBrightness, value => { _settings.LinkedBrightness = value; Save(); })));
-        PageContent.Children.Add(SettingRow(T("NATIVE_SCROLL_STEP", "Brightness adjustment step"), T("NATIVE_SCROLL_DESCRIPTION", "Brightness change when using the mouse wheel over a slider."),
-            Number(_settings.ScrollStep, 1, 100, value => { _settings.ScrollStep = value; Save(); })));
         RenderGeneralExtensions();
     }
 
@@ -227,18 +250,18 @@ public sealed partial class SettingsWindow : Window
         {
             var monitor = sorted[index];
             var preferences = GetMonitorSettings(monitor.Id);
-            var contents = new StackPanel { Spacing = 14 };
+            var contents = new StackPanel { Spacing = 12 };
             var top = new Grid { ColumnSpacing = 12 };
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var identity = new StackPanel { Spacing = 3 };
+            var identity = new StackPanel { Spacing = 4 };
             identity.Children.Add(Label(DisplayName(monitor), 18));
             var capability = monitor.SupportsBrightness ? T("NATIVE_SUPPORTS_BRIGHTNESS", "Brightness control available") : T("NATIVE_NO_BRIGHTNESS", "Brightness control unavailable");
             identity.Children.Add(Description($"{monitor.Connection} · {capability}"));
             top.Children.Add(identity);
-            var order = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Top };
-            var up = new Button { Content = new FontIcon { Glyph = "\uE70E", FontSize = 12 }, IsEnabled = index > 0 };
-            var down = new Button { Content = new FontIcon { Glyph = "\uE70D", FontSize = 12 }, IsEnabled = index < sorted.Count - 1 };
+            var order = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Top };
+            var up = new Button { Style = SharedStyle("ToolbarButtonStyle"), Content = new FontIcon { Glyph = "\uE70E", FontSize = 14 }, IsEnabled = index > 0 };
+            var down = new Button { Style = SharedStyle("ToolbarButtonStyle"), Content = new FontIcon { Glyph = "\uE70D", FontSize = 14 }, IsEnabled = index < sorted.Count - 1 };
             AutomationProperties.SetName(up, T("NATIVE_MOVE_UP", "Move up"));
             AutomationProperties.SetName(down, T("NATIVE_MOVE_DOWN", "Move down"));
             ToolTipService.SetToolTip(up, T("NATIVE_MOVE_UP", "Move up"));
@@ -252,19 +275,14 @@ public sealed partial class SettingsWindow : Window
             top.Children.Add(order);
             contents.Children.Add(top);
 
-            var name = new TextBox
+            var name = TextEditor(T("NATIVE_DISPLAY_NAME", "Display name"), preferences.Name, newName =>
             {
-                Header = T("NATIVE_DISPLAY_NAME", "Display name"), Text = preferences.Name,
-                PlaceholderText = monitor.Name, HorizontalAlignment = HorizontalAlignment.Stretch
-            };
-            name.LostFocus += (_, _) =>
-            {
-                var newName = name.Text.Trim();
                 if (preferences.Name == newName) return;
                 preferences.Name = newName;
                 ((TextBlock)identity.Children[0]).Text = DisplayName(monitor);
                 Save();
-            };
+            }, "monitor:" + monitor.Id + ":name");
+            name.Input.PlaceholderText = monitor.Name;
             contents.Children.Add(name);
             contents.Children.Add(InlineRow(T("NATIVE_SHOW_NAME", "Show monitor name on slider"), Toggle(preferences.ShowName, value => { preferences.ShowName = value; Save(); })));
             contents.Children.Add(InlineRow(T("NATIVE_SHOW_VALUE", "Show brightness value on slider"), Toggle(preferences.ShowValue, value => { preferences.ShowValue = value; Save(); })));
@@ -308,7 +326,8 @@ public sealed partial class SettingsWindow : Window
             limits.Children.Add(min);
             limits.Children.Add(max);
             contents.Children.Add(limits);
-            PageContent.Children.Add(Card(contents));
+            PageContent.Children.Add(ExpandableCard("monitor:" + monitor.Id, () => DisplayName(monitor),
+                () => $"{EnabledSummary(!preferences.Hidden)} · {monitor.Brightness:0}% · {preferences.MinBrightness}–{preferences.MaxBrightness}%", contents, index == 0));
         }
     }
 
@@ -406,7 +425,7 @@ public sealed partial class SettingsWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var toggle = Toggle(enabled, changed);
         toggle.Header = T("NATIVE_ENABLED", "Enabled");
-        var delete = new Button { Content = new FontIcon { Glyph = "\uE74D", FontSize = 16 }, VerticalAlignment = VerticalAlignment.Center };
+        var delete = new Button { Style = SharedStyle("ToolbarButtonStyle"), Content = new FontIcon { Glyph = "\uE74D", FontSize = 16 }, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetName(delete, deleteLabel);
         ToolTipService.SetToolTip(delete, deleteLabel);
         delete.Click += (_, _) => deleted();
@@ -418,7 +437,7 @@ public sealed partial class SettingsWindow : Window
 
     private static StackPanel BrightnessEditor(int value, Action<int> changed, string? title = null)
     {
-        var content = new StackPanel { Spacing = 6 };
+        var content = new StackPanel { Spacing = 4 };
         var label = Label($"{title ?? T("PANEL_LABEL_BRIGHTNESS", "Brightness")} · {value}%");
         content.Children.Add(label);
         var slider = new Slider { Minimum = 0, Maximum = 100, Value = value, StepFrequency = 1, TickFrequency = 10, HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -458,10 +477,10 @@ public sealed partial class SettingsWindow : Window
 
     private static ComboBox Choice(IEnumerable<(string Value, string Label)> values, string selected, Action<string> changed)
     {
-        var combo = new ComboBox { MinWidth = 220, MaxWidth = 340, HorizontalAlignment = HorizontalAlignment.Left };
+        var combo = new ComboBox { MinWidth = 0, Width = 240, MaxWidth = 340, HorizontalAlignment = HorizontalAlignment.Left };
         foreach (var (value, label) in values)
         {
-            var option = new ComboBoxItem { Content = label, Tag = value };
+            var option = new ComboBoxItem { Content = new TextBlock { Text = label, TextWrapping = TextWrapping.Wrap }, Tag = value };
             combo.Items.Add(option);
             if (value == selected) combo.SelectedItem = option;
         }
@@ -474,56 +493,47 @@ public sealed partial class SettingsWindow : Window
         var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         content.Children.Add(new FontIcon { Glyph = "\uE710", FontSize = 14 });
         content.Children.Add(new TextBlock { Text = label });
-        return new Button { Content = content, Margin = new Thickness(0, 0, 0, 6), HorizontalAlignment = HorizontalAlignment.Left };
+        return new Button { Content = content, Margin = new Thickness(0, 0, 0, 8), HorizontalAlignment = HorizontalAlignment.Left };
     }
 
     private Border SettingRow(string title, string? description, FrameworkElement? control = null)
     {
-        var row = new Grid { ColumnSpacing = 22 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var text = new StackPanel { Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+        var text = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center };
         text.Children.Add(Label(title));
         if (!string.IsNullOrWhiteSpace(description)) text.Children.Add(Description(description));
-        row.Children.Add(text);
+        Border result;
         if (control is not null)
         {
-            Grid.SetColumn(control, 1);
-            control.VerticalAlignment = VerticalAlignment.Center;
             AutomationProperties.SetName(control, title);
-            row.Children.Add(control);
+            AutomationProperties.SetAutomationId(control, "setting:" + LabelKey(title));
+            result = Card(ResponsiveRow(text, control));
         }
-        return Card(row);
+        else result = Card(text);
+        return result;
     }
 
     private static Grid InlineRow(string title, FrameworkElement control)
     {
-        var grid = new Grid { ColumnSpacing = 16 };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var label = Label(title);
         label.VerticalAlignment = VerticalAlignment.Center;
-        grid.Children.Add(label);
-        Grid.SetColumn(control, 1);
         AutomationProperties.SetName(control, title);
-        grid.Children.Add(control);
-        return grid;
+        AutomationProperties.SetAutomationId(control, "setting:" + LabelKey(title));
+        return ResponsiveRow(label, control);
     }
 
     private Border Card(UIElement child) => new()
     {
-        Child = child, Style = (Style)Root.Resources["SettingsCardStyle"]
+        Child = child, Style = SharedStyle("SettingsCardStyle")
     };
 
     private static TextBlock Label(string text, double fontSize = 14) => new()
     {
-        Text = text, FontSize = fontSize, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-        TextWrapping = TextWrapping.Wrap
+        Text = text, Style = SharedStyle("SettingLabelTextStyle"), FontSize = fontSize
     };
 
     private static TextBlock Description(string text, Thickness? margin = null) => new()
     {
-        Text = text, FontSize = 12, TextWrapping = TextWrapping.Wrap, Opacity = 0.72,
+        Text = text, Style = SharedStyle("SecondaryTextStyle"),
         Margin = margin ?? new Thickness(0)
     };
 
@@ -531,9 +541,11 @@ public sealed partial class SettingsWindow : Window
     {
         var keys = new List<(string, string)>
         {
-            ("38", "↑ Up"), ("40", "↓ Down"), ("37", "← Left"), ("39", "→ Right"),
-            ("33", "Page Up"), ("34", "Page Down"), ("36", "Home"), ("35", "End"),
-            ("32", "Space"), ("187", "+"), ("189", "−")
+            ("38", "↑ " + T("NATIVE_KEY_Up", "Up")), ("40", "↓ " + T("NATIVE_KEY_Down", "Down")),
+            ("37", "← " + T("NATIVE_KEY_Left", "Left")), ("39", "→ " + T("NATIVE_KEY_Right", "Right")),
+            ("33", T("NATIVE_KEY_PageUp", "Page up")), ("34", T("NATIVE_KEY_PageDown", "Page down")),
+            ("36", T("NATIVE_KEY_Home", "Home")), ("35", T("NATIVE_KEY_End", "End")),
+            ("32", T("NATIVE_KEY_Space", "Space")), ("187", "+"), ("189", "−")
         };
         for (var i = 0; i <= 9; i++) keys.Add(((0x30 + i).ToString(), i.ToString()));
         for (var i = 0; i < 26; i++) keys.Add(((0x41 + i).ToString(), ((char)('A' + i)).ToString()));
@@ -546,12 +558,19 @@ public sealed partial class SettingsWindow : Window
                 or Windows.System.VirtualKey.Shift or Windows.System.VirtualKey.LeftShift or Windows.System.VirtualKey.RightShift
                 or Windows.System.VirtualKey.Menu or Windows.System.VirtualKey.LeftMenu or Windows.System.VirtualKey.RightMenu
                 or Windows.System.VirtualKey.LeftWindows or Windows.System.VirtualKey.RightWindows) continue;
-            keys.Add((code.ToString(CultureInfo.InvariantCulture), key.ToString()));
+            var name = System.Text.RegularExpressions.Regex.Replace(key.ToString(), "([a-z])([A-Z])", "$1 $2");
+            keys.Add((code.ToString(CultureInfo.InvariantCulture), code is >= 0x60 and <= 0x69
+                ? $"{T("NATIVE_KEYPAD", "Number pad")} {code - 0x60}" : T("NATIVE_KEY_" + key, name)));
         }
         return keys;
     }
 
     internal void ShowError(string message) { SettingsError.Message = message; SettingsError.IsOpen = true; }
 
-    private void Save() => _saveSettings();
+    private void Save()
+    {
+        if (_isRendering || _restoringView) return;
+        _saveSettings();
+        foreach (var update in _cardSummaries.ToArray()) update();
+    }
 }

@@ -48,11 +48,10 @@ function Start-TestProcess {
 }
 
 function Invoke-TestCommand {
-    param([string] $Name, [string[]] $Arguments, [switch] $AllowFailure)
+    param([string] $Name, [string[]] $Arguments, [switch] $AllowFailure, [ValidateRange(1, 180)][int] $TimeoutSeconds = 30)
     $invocation = Start-TestProcess -Name $Name -Arguments $Arguments
-    if (-not $invocation.Process.WaitForExit(30000)) {
-        throw "'$Name' did not exit within 30 seconds. See $runDirectory."
-    }
+    try { $null = $invocation.Process.WaitForExitAsync().WaitAsync([TimeSpan]::FromSeconds($TimeoutSeconds)).GetAwaiter().GetResult() }
+    catch [TimeoutException] { throw "'$Name' did not exit within $TimeoutSeconds seconds. See $runDirectory." }
     # Complete redirected stream delivery before reading the files.
     $invocation.Process.WaitForExit()
     $output = [IO.File]::ReadAllText($invocation.StdoutPath)
@@ -67,6 +66,21 @@ function Invoke-TestCommand {
 function Assert-Test {
     param([bool] $Condition, [string] $Message)
     if (-not $Condition) { throw $Message }
+}
+
+function Copy-UiTestEvidence {
+    param([string] $ReportPath)
+    $report = Get-Content -Raw -LiteralPath $ReportPath | ConvertFrom-Json
+    Copy-Item -LiteralPath $ReportPath -Destination (Join-Path $runDirectory 'ui-layout-test.json')
+    $previewRoot = [IO.Path]::GetFullPath((Join-Path $applicationDirectory 'test-fixtures\ui-previews')) + [IO.Path]::DirectorySeparatorChar
+    $previewOutput = Join-Path $runDirectory 'ui-previews'
+    New-Item -ItemType Directory -Path $previewOutput -Force | Out-Null
+    foreach ($preview in $report.Previews) {
+        $previewPath = [IO.Path]::GetFullPath($preview.Path)
+        Assert-Test ($previewPath.StartsWith($previewRoot, [StringComparison]::OrdinalIgnoreCase)) 'A UI preview escaped the isolated fixture directory.'
+        Copy-Item -LiteralPath $previewPath -Destination (Join-Path $previewOutput ([IO.Path]::GetFileName($previewPath)))
+    }
+    return $report
 }
 
 function Invoke-TestPipeRequest {
@@ -113,7 +127,7 @@ try {
 
     $smokePath = Join-Path $applicationDirectory 'smoke-test.json'
     $smokeStarted = [DateTime]::UtcNow
-    $null = Invoke-TestCommand -Name 'smoke' -Arguments @('--smoke-test')
+    $null = Invoke-TestCommand -Name 'smoke' -Arguments @('--smoke-test') -TimeoutSeconds 180
     Assert-Test (Test-Path -LiteralPath $smokePath -PathType Leaf) 'The application did not write smoke-test.json.'
     Assert-Test ((Get-Item -LiteralPath $smokePath).LastWriteTimeUtc -ge $smokeStarted) 'The smoke-test report is stale.'
     $smoke = Get-Content -Raw -LiteralPath $smokePath | ConvertFrom-Json
@@ -125,6 +139,12 @@ try {
     Assert-Test ($automation.Passed -and $automation.Failures.Count -eq 0 -and $automation.Observations.Count -ge 20) 'The scheduling, profile, sensor, idle, and manual-control automation regressions did not all pass.'
     Copy-Item -LiteralPath $automationPath -Destination (Join-Path $runDirectory 'automation-regression.json')
     Copy-Item -LiteralPath $smokePath -Destination (Join-Path $runDirectory 'smoke-test.json')
+    $uiPath = Join-Path $applicationDirectory 'ui-layout-test.json'
+    Assert-Test (Test-Path -LiteralPath $uiPath -PathType Leaf) 'The application did not produce UI layout results.'
+    Assert-Test ((Get-Item -LiteralPath $uiPath).LastWriteTimeUtc -ge $smokeStarted) 'The UI layout report is stale.'
+    $ui = Copy-UiTestEvidence -ReportPath $uiPath
+    Assert-Test ($ui.Passed -and $ui.NativeWinUI -and $ui.MatrixCases -ge 144 -and $ui.Errors.Count -eq 0 -and $ui.HardwareWrites -eq 0 -and $ui.UserSettingsWrites -eq 0 -and -not $ui.WindowsDpiChanged) 'The arranged UI matrix, interaction checks, and isolated preview capture must all pass.'
+    Assert-Test ($ui.Previews.Count -ge 11) 'The UI test must capture general, dark and compact settings, monitors, profiles, inline errors, tray, OSD, and render-scale previews.'
     $passedChecks.Add('Native startup, two demo displays, eleven settings pages, and runtime controls')
 
     $demo = Start-TestProcess -Name 'demo-server' -Arguments @('--demo', '--background')
@@ -218,12 +238,21 @@ try {
         SimulatedMonitors = 2
         SettingsPages = $smoke.SettingsPages
         RuntimeChecks = $smoke.RuntimeChecks
+        UiLayoutCases = $ui.MatrixCases
         HardwareWrites = 0
         Checks = $passedChecks.ToArray()
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runDirectory 'integration-test.json') -Encoding utf8
     Write-Host "PASS $($passedChecks.Count) integration checks. Results: $runDirectory"
 }
 catch {
+    $smokePath = Join-Path $applicationDirectory 'smoke-test.json'
+    if ((Test-Path -LiteralPath $smokePath -PathType Leaf) -and (Get-Item -LiteralPath $smokePath).LastWriteTimeUtc -ge $smokeStarted) {
+        Copy-Item -LiteralPath $smokePath -Destination (Join-Path $runDirectory 'smoke-test.json')
+    }
+    $uiPath = Join-Path $applicationDirectory 'ui-layout-test.json'
+    if ((Test-Path -LiteralPath $uiPath -PathType Leaf) -and (Get-Item -LiteralPath $uiPath).LastWriteTimeUtc -ge $smokeStarted) {
+        try { $null = Copy-UiTestEvidence -ReportPath $uiPath } catch { Write-Warning "Could not copy all UI evidence: $($_.Exception.Message)" }
+    }
     $automationPath = Join-Path $applicationDirectory 'automation-regression.json'
     if ((Test-Path -LiteralPath $automationPath -PathType Leaf) -and (Get-Item -LiteralPath $automationPath).LastWriteTimeUtc -ge $smokeStarted) {
         Copy-Item -LiteralPath $automationPath -Destination (Join-Path $runDirectory 'automation-regression.json')

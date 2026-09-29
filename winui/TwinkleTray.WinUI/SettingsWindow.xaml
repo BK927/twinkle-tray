@@ -4,20 +4,12 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Twinkle Tray Settings">
     <Grid x:Name="Root">
-        <Grid.Resources>
-            <Style x:Key="SettingsCardStyle" TargetType="Border">
-                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="CornerRadius" Value="8" />
-                <Setter Property="Padding" Value="18" />
-            </Style>
-        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="40" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <Border x:Name="SolidBackground" Grid.RowSpan="3" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
         <Grid x:Name="TitleBar" Background="Transparent">
             <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,0,0" VerticalAlignment="Center">
                 <FontIcon Glyph="&#xE706;" FontSize="16" />
@@ -27,7 +19,7 @@
         <NavigationView x:Name="Navigation" Grid.Row="1"
                         IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
                         IsPaneToggleButtonVisible="False" PaneDisplayMode="Left"
-                        OpenPaneLength="244" IsPaneOpen="True"
+                        OpenPaneLength="240" CompactPaneLength="48" IsPaneOpen="True"
                         IsTitleBarAutoPaddingEnabled="False"
                         SelectionChanged="Navigation_SelectionChanged">
             <NavigationView.MenuItems>
@@ -63,13 +55,14 @@
                     <NavigationViewItem.Icon><FontIcon Glyph="&#xE946;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="PageContent" Margin="28,16,28,32" Spacing="10" MaxWidth="940"
+            <ScrollViewer x:Name="PageScrollViewer" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PageContent" Margin="24,16,24,24" Spacing="8" MaxWidth="940"
                             HorizontalAlignment="Stretch" />
             </ScrollViewer>
         </NavigationView>
-        <InfoBar x:Name="StatusBar" Grid.Row="2" IsOpen="False" IsClosable="True" Severity="Informational" Margin="16,0,16,12" />
-        <InfoBar x:Name="SettingsError" Grid.Row="1" IsOpen="False" IsClosable="True"
-                 Severity="Error" VerticalAlignment="Bottom" Margin="260,0,16,16" />
+        <StackPanel Grid.Row="2" Spacing="8" Margin="16,0,16,12">
+            <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" Severity="Informational" />
+            <InfoBar x:Name="SettingsError" IsOpen="False" IsClosable="True" Severity="Error" />
+        </StackPanel>
     </Grid>
 </Window>

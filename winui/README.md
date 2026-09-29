@@ -1,4 +1,4 @@
-# Twinkle Tray · WinUI 3 · 0.2.1
+# Twinkle Tray · WinUI 3 · 0.2.2
 
 Twinkle Tray의 트레이 패널, 설정 구성과 주요 동작을 C#과 WinUI 3로 옮긴 커뮤니티 포크입니다. 밝기 조절뿐 아니라 고급 DDC/CI, HDR/감마, 시간 예약, 앱별 프로필, 조도 센서, 설정 가져오기와 업데이트 기능을 포함합니다. 원본 Electron 소스는 저장소에 보존하고 네이티브 앱은 `winui/`에 분리했습니다.
 
@@ -34,9 +34,13 @@ Windows 10 버전 2004(빌드 19041) 이상 또는 Windows 11이 필요합니다
 
 결과는 `winui/artifacts/win-x64/` 또는 `winui/artifacts/win-arm64/`에 생성됩니다. .NET과 Windows App SDK 런타임을 포함한 자체 포함 빌드입니다. 실행 파일만 복사하지 말고 **DLL, Assets, Localization을 포함한 폴더 전체**를 함께 옮기세요. ARM64 결과물은 ARM64 Windows에서 사용하며, 실제 ARM64 장치 실행은 아직 검증하지 않았습니다.
 
+## 0.2.2 화면 개선
+
+원본 메뉴 구성을 유지하면서 설정 행의 반응형 배치, 요약이 있는 접기 카드, 편집 중인 값·선택·포커스·스크롤 유지와 입력란 옆 오류 표시를 정리했습니다. 패널과 밝기 표시창은 실제 내용 크기로 배치하며 공통 테마 스타일을 사용합니다. 한국어 문구와 키 이름을 보완하고 고대비 및 배경 효과 미지원 환경의 단색 배경도 적용했습니다. **0.2.2의 실제 WinUI 창에서 레이아웃 144개와 상호작용·팝업 검사 24개가 통과했습니다.** 자세한 변경과 검증 범위는 [UI 폴리싱 안내](UI-POLISH.md)에 있습니다.
+
 ## 구현된 기능
 
-| 범위 | 0.2.1 구현 |
+| 범위 | 0.2.2 구현 |
 | --- | --- |
 | 트레이·패널 | 모니터별 슬라이더, 밝기 연동, 휠 조절, 이름·순서·숨김, 새로 고침, 전원 제어, 시작 프로그램 등록 |
 | 외형 | 시스템·밝은·어두운 테마, Windows 10/11 스타일, 아크릴, 원본 트레이 아이콘, 별도의 밝기 OSD와 표시 시간·전체 화면 정책 |
@@ -98,11 +102,11 @@ $app = '.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe'
 
 ```powershell
 # 빌드한 x64 앱의 포터블 ZIP만 생성
-.\winui\package.ps1 -Architecture x64 -Version 0.2.1 -SkipMsix
+.\winui\package.ps1 -Architecture x64 -Version 0.2.2 -SkipMsix
 
 # ZIP과 MSIX 생성 — Windows SDK의 makeappx.exe 필요
-.\winui\package.ps1 -Architecture x64 -Version 0.2.1
-.\winui\package.ps1 -Architecture ARM64 -Version 0.2.1
+.\winui\package.ps1 -Architecture x64 -Version 0.2.2
+.\winui\package.ps1 -Architecture ARM64 -Version 0.2.2
 ```
 
 패키지와 아키텍처별 SHA-256 목록은 `winui/artifacts/packages/`에 생성됩니다. 기본 MSIX는 **서명되지 않은 검증용 패키지**입니다. 실제 설치·배포에는 패키지 Publisher와 일치하는 신뢰된 인증서로 서명해야 합니다. 스크립트는 `-Publisher`와 `-CertificatePath`를 지원하며, 인증서를 자동으로 신뢰 목록에 설치하지 않습니다. 서명된 설치·시작 프로그램·제거 동작은 별도 검증 대상입니다. 프리뷰에서 정식 버전으로의 MSIX 업그레이드에는 숫자 리비전 관리가 필요합니다. `-MsixRevision`과 배포 방법은 [패키징 문서](PACKAGING.md)를 참고하세요.
@@ -111,7 +115,7 @@ $app = '.\winui\artifacts\win-x64\TwinkleTray.WinUI.exe'
 
 ## 검증
 
-0.2.1 자동 검증의 대상은 Windows x64입니다. 이번에 찾은 오류와 실물 모니터 시험 범위는 [자동 검증 보고서](VERIFICATION.md)를 참고하세요.
+0.2.2의 코어·네이티브 GUI·UI·IPC 검사는 Windows x64에서 통과했습니다. 이번 모의 검증과 **0.2.1에서 수행한 실제 장치 시험**은 아래에 구분했습니다. 수정한 오류와 실물 모니터 시험의 자세한 범위는 [자동 검증 보고서](VERIFICATION.md)를 참고하세요.
 
 ```powershell
 # WinUI·하드웨어와 독립적인 코어 테스트
@@ -126,20 +130,34 @@ dotnet run --project .\winui\TwinkleTray.Hardware\Diagnostics --configuration Re
 
 통합 스크립트는 새로 생성된 GUI 검사 보고서를 확인하고 숨겨진 데모 인스턴스로 명령을 검사합니다. 다른 데모 인스턴스를 먼저 닫아 주세요. 각 프로세스 대기에는 제한 시간이 있으며 스크립트가 직접 시작한 프로세스만 종료합니다. 결과는 `winui/artifacts/test-results/`에 남고 `-TestOutput`으로 위치를 바꿀 수 있습니다.
 
-현재 확인한 결과:
+0.2.2에서 확인한 결과:
+
+| 검사 | 확인된 범위 |
+| --- | --- |
+| 코어 | **46/46 통과**. UI 변경 뒤 기존 알고리즘·설정·가져오기·CLI 검사를 다시 실행했습니다. |
+| 네이티브 GUI·런타임 | **설정 페이지 11개와 런타임 검사 41개 통과**. 자동 제어 회귀 20개를 포함하며 하드웨어 쓰기는 0회입니다. |
+| 데모 IPC | **통합 검사 11개 그룹 통과**. 명령 전달·목록·밝기·선택자·범위 제한·오류 후 복구·도움말·예약·OSD·설정 창을 모의 화면에서 확인했습니다. |
+| 설정 레이아웃 | **144개 통과**: 11개 페이지 × 한국어/영어 × 밝음/어두움 × 세 창 크기의 132개 조합, 빈 상태 11개, 인라인 오류 표시 1개입니다. |
+| 상호작용·패널·OSD | **24개 통과**: 잘못된 입력의 저장 차단과 수정 후 1회 저장, 접기 상태·포커스·선택·스크롤·미저장 초안 보존, 1/6/12개 화면의 밝음/어두움 패널·OSD 경계와 실제 스크롤을 확인했습니다. |
+| 렌더링 자료 | **PNG 11개 생성**. 실제 호스트 배율은 **150%(1.5)**였으며 100/125/150/200% 이미지는 그 위에 적용한 상대 캡처 배율입니다. Windows 배율을 각각 변경해 실행한 시험은 아닙니다. |
+
+<!-- 0.2.2 RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
+0.2.2 전체 검사는 **2026-09-29 08:23:37 UTC**에 완료했습니다. 증거는 `winui/artifacts/test-results/20260929T082103256-2b6a96d7ea6449edb7cd5dd7ae451a36/`의 `smoke-test.json`, `ui-layout-test.json`, `integration-test.json`에 있으며 모두 `Passed: true`입니다. 실제 고대비 모드, 여러 Windows DPI 세션, 화면 읽기 프로그램과 글자 렌더링 품질 전체를 검증한 결과는 아닙니다. 세부 절차와 제한은 [UI-POLISH.md](UI-POLISH.md)를 참고하세요.
+
+아래는 **0.2.1의 기존 검증 기록**입니다. 실제 장치 시험은 0.2.2 UI 검사에서 반복하지 않았습니다.
 
 | 검사 | 확인된 범위 |
 | --- | --- |
 | 코어 | **46/46 통과**: 보정·일정·태양 위치·센서 곡선·프로필·설정 복구·가져오기·SemVer·CLI |
 | 확장 GUI·런타임 | **설정 페이지 11개와 런타임 검사 41개 통과**. 런타임 검사에는 자동 제어 회귀 20개가 포함됩니다. 감마·HDR·최소 밝기 확장·다중 단축키·프로필·전환 취소·지연 복원·UDP 인증과 잘못된 입력·업데이트 파일 복사/롤백을 모의 환경에서 검사했습니다. |
 | 데모 IPC | **통합 검사 11개 그룹 통과**. 시작·목록·밝기 60/65·ID별 제어·범위 제한·잘못된 명령 후 정상 복구·도움말·시간 예약·OSD·설정 창을 확인했습니다. |
-| 빌드 | **0.2.1 x64 Release 배포 빌드에서 경고·오류 0개**를 확인했습니다. 이전 0.2.0의 ARM64 빌드는 통과했으나 0.2.1 ARM64 재빌드와 실제 ARM64 장치 실행은 아직 미검증입니다. |
+| 빌드 | **0.2.1의 x64·ARM64 CI 빌드 통과**를 확인했습니다. 커밋 `704dac7`의 [GitHub Actions 실행 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766)에서 두 아키텍처 작업이 모두 성공했습니다. 실제 ARM64 장치 실행은 미검증입니다. |
 | 실제 장치 DDC/CI | Windows 11 x64의 LG ULTRAGEAR+에서 밝기 **100→98→100**, 대비 **70→72→70**, AOC Q32V3WG5에서 밝기 **100→98→100**, 대비 **50→52→50**을 확인했습니다. 각 변경의 재조회·원값 복원·다른 화면 값 유지가 통과했습니다. 초기 핸들 조회 재시도 수정 후 새 프로세스 3회 모두 첫 조회에서 두 화면의 DDC/CI를 정상 인식했습니다. |
 | 실제 장치 감마 | 같은 두 화면에 각각 **98% 감마 밝기**를 요청한 뒤 원본 감마 램프의 **768개 값 모두 정확히 복원**하고 다른 화면의 램프가 유지됨을 확인했습니다. 이 검사는 앱 종료·핫플러그 등 자동 복원 수명주기 검증을 포함하지 않습니다. |
 | MSIX·업데이트 | **서명되지 않은 MSIX 시험 패키지 구성 검증, 시험 설치 폴더의 파일 교체와 실패 시 롤백 통과**. 모의 HTTP 응답으로 릴리스 선택·다운로드·체크섬·압축 해제·잘못된 파일 거부도 통과했습니다. 실제 릴리스 서버와 부모 프로세스 종료·재시작 전체 흐름, 서명된 MSIX 설치는 미검증입니다. |
 
 <!-- RELEASE EVIDENCE: update this paragraph and count references together when rerunning verification. -->
-위 GUI·IPC 결과는 2026-09-29 06:41:02 UTC에 완료한 `winui/artifacts/test-results/20260929T064038744-0407eee76f434b2fb704e08b9b3a46f6/`의 `smoke-test.json`, `integration-test.json`, `automation-regression.json`을 기준으로 합니다. 통합 보고서에는 실행 파일과 WinUI·Core·Hardware DLL의 SHA-256도 기록했습니다. 모의 화면 2개를 사용했고 하드웨어 쓰기 횟수는 0입니다. 한국어 일반·DDC/CI·프로필 편집·조도 센서 설정을 기본 창 크기에서 확인하고 밝기 패널도 확인했습니다. `--demo --settings`로 처음 여는 설정 창의 표시·크기 문제 역시 수정 후 정상 표시를 확인했습니다. 영어·밝은 테마·고대비·여러 DPI의 전체 조합 검사는 아직 수행하지 않았습니다.
+위 0.2.1 GUI·IPC 결과는 2026-09-29 06:41:02 UTC에 완료한 `winui/artifacts/test-results/20260929T064038744-0407eee76f434b2fb704e08b9b3a46f6/`의 `smoke-test.json`, `integration-test.json`, `automation-regression.json`을 기준으로 합니다. 통합 보고서에는 실행 파일과 WinUI·Core·Hardware DLL의 SHA-256도 기록했습니다. 모의 화면 2개를 사용했고 하드웨어 쓰기 횟수는 0입니다. 당시 한국어 일반·DDC/CI·프로필 편집·조도 센서 설정과 밝기 패널을 기본 창 크기에서 확인했으며 `--demo --settings` 초기 표시도 확인했습니다. 한국어/영어·밝음/어두움·세 창 크기의 레이아웃 조합은 위 0.2.2 검사에서 추가됐습니다. 실제 고대비와 여러 Windows DPI 세션 검사는 여전히 별도 검증 대상입니다.
 
 실물 검증 범위는 Windows 11 x64에 연결된 위 외부 모니터 2대입니다. 전원·입력·HDR/SDR 화이트 레벨 변경은 수행하지 않았습니다. 노트북 WMI·전용 밝기 키·덮개 상태, Apple 화면, 실제 조도 센서, 절전·핫플러그 복원, 앱 종료·제어 경로 변경·핫플러그에 따른 감마 자동 복원, ARM64 실행은 추가 검증 대상입니다. [이식 체크리스트](PORT-CHECKLIST.md)의 미검증 항목을 구현 누락과 혼동하지 마세요.
 
@@ -167,6 +185,8 @@ This community C#/WinUI 3 port implements Twinkle Tray's main controls and advan
 
 Build on Windows 10 build 19041 or later with the .NET 10 SDK: `./winui/build.ps1 -Architecture x64,ARM64`. Run with `--demo` for simulated monitors, `--settings` for preferences, or `--help` for CLI usage. Distribute the whole self-contained output directory or follow [PACKAGING.md](PACKAGING.md); default MSIX packages are unsigned and require trusted signing before deployment.
 
-**Implemented does not mean tested on every device.** All 46 core tests, 11 settings pages, 41 simulated runtime assertions (including 20 automation regressions) and 11 IPC test groups passed, including fixture update copying and rollback. The 0.2.1 x64 Release build passed; the ARM64 build passed for 0.2.0 and needs revalidation for 0.2.1. Physical tests covered LG ULTRAGEAR+ and AOC Q32V3WG5 on Windows 11 x64: small DDC brightness/contrast changes, exact restoration, and 98% gamma requests with all 768 original ramp values restored and the other display unchanged. Gamma restoration on shutdown/hotplug, Apple hardware, ARM64 execution, signed MSIX installation and the full download/process-restart upgrade flow remain unverified. See the [verification report](VERIFICATION.md), [source audit and validation checklist](PORT-CHECKLIST.md) and [hardware documentation](TwinkleTray.Hardware/README.md) for precise limits.
+The 0.2.2 UI changes add responsive settings rows, collapsible summary cards, editing-state preservation, inline validation and shared theme-aware styles. On Windows x64, 46 core tests, 11 settings pages, 41 simulated runtime assertions, 144 arranged-layout cases, 24 interaction/popup checks and 11 IPC test groups passed. Eleven preview PNGs were generated at a host rasterization scale of 1.5; the requested 100/125/150/200% capture scales are relative renderings, not separate Windows DPI sessions. See [UI-POLISH.md](UI-POLISH.md) for evidence and limitations.
+
+**Implemented does not mean tested on every device.** For 0.2.1, all 46 core tests, 11 settings pages, 41 simulated runtime assertions (including 20 automation regressions) and 11 IPC test groups passed, including fixture update copying and rollback. Both x64 and ARM64 build jobs passed for commit `704dac7` in [GitHub Actions run 36532678766](https://github.com/BK927/twinkle-tray/actions/runs/36532678766). Physical tests covered LG ULTRAGEAR+ and AOC Q32V3WG5 on Windows 11 x64: small DDC brightness/contrast changes, exact restoration, and 98% gamma requests with all 768 original ramp values restored and the other display unchanged. Gamma restoration on shutdown/hotplug, Apple hardware, ARM64 execution, signed MSIX installation and the full download/process-restart upgrade flow remain unverified. See the [verification report](VERIFICATION.md), [source audit and validation checklist](PORT-CHECKLIST.md) and [hardware documentation](TwinkleTray.Hardware/README.md) for precise limits.
 
 Twinkle Tray was created by Xander Frangos and contributors. This community port retains their copyright and the repository's MIT license.

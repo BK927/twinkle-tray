@@ -74,15 +74,31 @@ internal sealed partial class AppController
         _timer.Start();
         if (IsSmokeTest)
         {
-            Settings.Schedule.Add(new ScheduleEntry { Enabled = false, Time = "20:00", Brightness = 40 });
-            Settings.Hotkeys.Add(new HotkeyBinding { Enabled = false });
-            Settings.Monitors["demo:external"] = new MonitorSettings { ShowContrast = true };
-            var runtimeChecks = await VerifyRuntimeForSmokeTestAsync();
-            OpenSettings();
-            int settingsPages = _settingsWindow!.VerifyPagesForSmokeTest();
-            await Task.Delay(2000);
-            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-test.json"), JsonSerializer.Serialize(new { Passed = true, NativeWinUI = true, DemoDisplays = _monitors.Count, SettingsWindow = _settingsWindow is not null, SettingsPages = settingsPages, RuntimeChecks = runtimeChecks, HardwareWrites = 0 }));
-            Quit();
+            IReadOnlyList<string> runtimeChecks = [];
+            int settingsPages = 0, uiLayoutCases = 0;
+            try
+            {
+                Settings.Schedule.Add(new ScheduleEntry { Enabled = false, Time = "20:00", Brightness = 40 });
+                Settings.Hotkeys.Add(new HotkeyBinding { Enabled = false });
+                Settings.Monitors["demo:external"] = new MonitorSettings { ShowContrast = true };
+                runtimeChecks = await VerifyRuntimeForSmokeTestAsync();
+                OpenSettings();
+                settingsPages = _settingsWindow!.VerifyPagesForSmokeTest();
+                uiLayoutCases = await VerifyUiForSmokeTestAsync();
+                await Task.Delay(2000);
+                File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-test.json"), JsonSerializer.Serialize(new { Passed = true, NativeWinUI = true, DemoDisplays = _monitors.Count, SettingsWindow = _settingsWindow is not null, SettingsPages = settingsPages, RuntimeChecks = runtimeChecks, UiLayoutCases = uiLayoutCases, HardwareWrites = 0 }));
+            }
+            catch (Exception exception)
+            {
+                Environment.ExitCode = 1;
+                Program.Log(exception);
+                try
+                {
+                    File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "smoke-test.json"), JsonSerializer.Serialize(new { Passed = false, NativeWinUI = true, Error = exception.ToString(), DemoDisplays = _monitors.Count, SettingsWindow = _settingsWindow is not null, SettingsPages = settingsPages, RuntimeChecks = runtimeChecks, UiLayoutCases = uiLayoutCases, HardwareWrites = 0 }));
+                }
+                catch (Exception reportException) { Program.Log(reportException); }
+            }
+            finally { Quit(); }
         }
     }
 

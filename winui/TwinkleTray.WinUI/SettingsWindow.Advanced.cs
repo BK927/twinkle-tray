@@ -20,28 +20,37 @@ public sealed partial class SettingsWindow
 
     private void RenderGeneralExtensions()
     {
-        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_TITLE", "Apply brightness at startup"), T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_DESC", "Restore the last known brightness for each display when Twinkle Tray starts."),
-            Toggle(_settings.RestoreBrightnessAtStartup, value => { _settings.RestoreBrightnessAtStartup = value; Save(); })));
-        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_DISABLE_ON_LOCK_SCREEN_TITLE", "Disable on Lock Screen"), T("SETTINGS_GENERAL_DISABLE_ON_LOCK_SCREEN_DESC", "Do not access monitors while the user session is locked."),
-            Toggle(_settings.DisableOnLockScreen, value => { _settings.DisableOnLockScreen = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_WINDOWS_UI_STYLE_TITLE", "Windows UI Style"), null,
             Choice([("system", T("GENERIC_DEFAULT", "Default")), ("win11", "Windows 11"), ("win10", "Windows 10")], _settings.WindowsStyle, value => { _settings.WindowsStyle = value; ApplyTheme(); Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_ACRYLIC_TITLE", "Acrylic Blur"), T("SETTINGS_GENERAL_ACRYLIC_DESC", "Enable blur behind the brightness panel."),
             Toggle(_settings.UseAcrylic, value => { _settings.UseAcrylic = value; ApplyTheme(); Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_TRAY_ICON_TITLE", "Tray icon"), null,
             Choice([("fluent", "Fluent"), ("mdl2", "MDL2"), ("icon", T("GENERIC_DEFAULT", "Default"))], _settings.TrayIcon, value => { _settings.TrayIcon = value; Save(); })));
+        Section(T("NATIVE_BRIGHTNESS_SHORTCUTS", "Brightness and scrolling"));
+        PageContent.Children.Add(SettingRow(T("PANEL_BUTTON_LINK_LEVELS", "Link levels"), T("NATIVE_LINK_DESCRIPTION", "Adjust all displays together from the brightness panel."),
+            Toggle(_settings.LinkedBrightness, value => { _settings.LinkedBrightness = value; Save(); })));
+        PageContent.Children.Add(SettingRow(T("NATIVE_SCROLL_STEP", "Brightness adjustment step"), T("NATIVE_SCROLL_DESCRIPTION", "Brightness change when using the mouse wheel over a slider."),
+            Number(_settings.ScrollStep, 1, 100, value => { _settings.ScrollStep = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_SCROLL_TITLE", "Tray icon scroll shortcut"), T("SETTINGS_GENERAL_SCROLL_DESC", "Scroll over the tray icon to change display brightness."),
             Toggle(_settings.TrayScrollEnabled, value => { _settings.TrayScrollEnabled = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_HOTKEYS_SCROLL_AMOUNT", "Amount to scroll"), null,
             Number(_settings.TrayScrollStep, 1, 100, value => { _settings.TrayScrollStep = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_HOTKEYS_INVERT_SCROLL_TITLE", "Invert scroll"), null,
             Toggle(_settings.InvertScroll, value => { _settings.InvertScroll = value; Save(); })));
+        Section(T("NATIVE_OVERLAY_SECTION", "Brightness overlay"));
         PageContent.Children.Add(SettingRow(T("NATIVE_SHOW_OVERLAY", "Show brightness overlay"), null,
             Toggle(_settings.ShowOverlay, value => { _settings.ShowOverlay = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("NATIVE_OVERLAY_TIMEOUT", "Overlay duration (seconds)"), null,
             Number(_settings.OverlayTimeoutSeconds, 1, 60, value => { _settings.OverlayTimeoutSeconds = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_OVERLAY_TITLE", "Default overlay behavior"), T("SETTINGS_GENERAL_OVERLAY_DESC", "Choose how the brightness overlay is shown over other apps."),
             Choice([("safe", T("SETTINGS_GENERAL_ON_OVERLAY_TITLE", "Most compatible")), ("aggressive", T("SETTINGS_GENERAL_FORCE_OVERLAY_TITLE", "Forced on"))], _settings.OverlayPolicy, value => { _settings.OverlayPolicy = value; Save(); })));
+        Section(T("NATIVE_STARTUP_RESTORE", "Startup and restoration"));
+        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_STARTUP", "Launch at startup"), null,
+            Toggle(_settings.RunAtStartup, value => { _settings.RunAtStartup = value; Save(); })));
+        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_TITLE", "Apply brightness at startup"), T("SETTINGS_GENERAL_BRIGHTNESS_STARTUP_DESC", "Restore the last known brightness for each display when Twinkle Tray starts."),
+            Toggle(_settings.RestoreBrightnessAtStartup, value => { _settings.RestoreBrightnessAtStartup = value; Save(); })));
+        PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_DISABLE_ON_LOCK_SCREEN_TITLE", "Disable on Lock Screen"), T("SETTINGS_GENERAL_DISABLE_ON_LOCK_SCREEN_DESC", "Do not access monitors while the user session is locked."),
+            Toggle(_settings.DisableOnLockScreen, value => { _settings.DisableOnLockScreen = value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_AUTOBRIGHT_TITLE", "Auto-apply brightness"), T("SETTINGS_GENERAL_AUTOBRIGHT_DESC", "Restore known brightness when displays reconnect or wake."),
             Toggle(!_settings.DisableAutoApply, value => { _settings.DisableAutoApply = !value; Save(); })));
         PageContent.Children.Add(SettingRow(T("SETTINGS_GENERAL_SKIP_THEME_CHANGES_TITLE", "Theme update detection"), T("SETTINGS_GENERAL_SKIP_THEME_CHANGES_DESC", "Update appearance when the Windows theme changes."),
@@ -63,7 +72,7 @@ public sealed partial class SettingsWindow
         latitude.Header = T("SETTINGS_TIME_LAT", "Latitude");
         var longitude = DecimalNumber(_settings.Longitude, -180, 180, value => { _settings.Longitude = value; Save(); });
         longitude.Header = T("SETTINGS_TIME_LONG", "Longitude");
-        location.Children.Add(latitude); location.Children.Add(longitude);
+        location.Children.Add(FieldGrid(latitude, longitude));
         if (_actions.GetCoordinatesAsync is not null)
             location.Children.Add(ActionButton(T("SETTINGS_TIME_SUN_GET", "Get coordinates"), async () =>
             {
@@ -72,18 +81,21 @@ public sealed partial class SettingsWindow
                 _settings.Longitude = Math.Clamp(coordinates.Longitude, -180, 180);
                 Save(); RenderPage();
             }));
-        PageContent.Children.Add(new Expander { Header = T("SETTINGS_TIME_SUN_TITLE", "Coordinates for sun position"), Content = location, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
+        PageContent.Children.Add(ExpandableCard("time:coordinates", () => T("SETTINGS_TIME_SUN_TITLE", "Coordinates for sun position"),
+            () => $"{_settings.Latitude:0.####}, {_settings.Longitude:0.####}", location));
         var add = AddButton(T("SETTINGS_TIME_ADD", "Add a time"));
         add.Click += (_, _) =>
         {
-            _settings.Schedule.Add(new ScheduleEntry { Id = Guid.NewGuid().ToString("N"), Enabled = true, Time = DateTime.Now.AddHours(1).ToString("HH:mm", CultureInfo.InvariantCulture), Brightness = 50, MonitorId = "all" });
+            var entry = new ScheduleEntry { Id = Guid.NewGuid().ToString("N"), Enabled = true, Time = DateTime.Now.AddHours(1).ToString("HH:mm", CultureInfo.InvariantCulture), Brightness = 50, MonitorId = "all" };
+            _settings.Schedule.Add(entry);
+            ExpandNewCard("schedule:" + entry.Id);
             Save(); RenderPage();
         };
         PageContent.Children.Add(add);
         if (_settings.Schedule.Count == 0) PageContent.Children.Add(Description(T("NATIVE_NO_SCHEDULE", "No brightness adjustments scheduled. Add a time to get started.")));
         foreach (var schedule in _settings.Schedule.ToList())
         {
-            var body = new StackPanel { Spacing = 14 };
+            var body = new StackPanel { Spacing = 12 };
             body.Children.Add(EditorHeader(schedule.Enabled, value => { schedule.Enabled = value; Save(); }, () => { _settings.Schedule.Remove(schedule); Save(); RenderPage(); }, T("SETTINGS_TIME_REMOVE", "Remove time")));
             var events = new List<(string Value, string Label)> { ("time", T("NATIVE_TIME", "Time")) };
             events.AddRange(SolarCalculator.EventNames.Select(name => (name, SolarEventName(name))));
@@ -101,13 +113,11 @@ public sealed partial class SettingsWindow
                 body.Children.Add(FieldNumber(T("NATIVE_SOLAR_OFFSET", "Offset from event (minutes)"), schedule.OffsetMinutes, -1440, 1440, value => { schedule.OffsetMinutes = value; Save(); }));
             body.Children.Add(TargetChoice(schedule.MonitorId, value => { schedule.MonitorId = value; Save(); }));
             body.Children.Add(BrightnessEditor(schedule.Brightness, value => { schedule.Brightness = value; Save(); }));
-            body.Children.Add(new Expander
-            {
-                Header = T("SETTINGS_TIME_INDIVIDUAL_TITLE", "Set brightness for individual displays"),
-                Content = MonitorLevelEditors(schedule.IndividualBrightness), HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch, IsExpanded = schedule.IndividualBrightness.Count > 0
-            });
-            PageContent.Children.Add(Card(body));
+            body.Children.Add(ExpandableCard("schedule:" + schedule.Id + ":displays", () => T("SETTINGS_TIME_INDIVIDUAL_TITLE", "Set brightness for individual displays"),
+                null, MonitorLevelEditors(schedule.IndividualBrightness), schedule.IndividualBrightness.Count > 0));
+            PageContent.Children.Add(ExpandableCard("schedule:" + schedule.Id,
+                () => schedule.Event == "time" ? schedule.Time : $"{SolarEventName(schedule.Event)} {schedule.OffsetMinutes:+#;-#;0} {T("NATIVE_MINUTES", "min")}",
+                () => $"{EnabledSummary(schedule.Enabled)} · {schedule.Brightness}% · {TargetName(schedule.MonitorId)}", body));
         }
     }
 
@@ -125,11 +135,11 @@ public sealed partial class SettingsWindow
         PageContent.Children.Add(SettingRow(T("SETTINGS_HOTKEYS_BREAK_TITLE", "Hotkeys break linked levels"), T("SETTINGS_HOTKEYS_BREAK_DESC", "A shortcut targeting one display temporarily overrides linked brightness."), Toggle(_settings.HotkeysBreakLinkedLevels, value => { _settings.HotkeysBreakLinkedLevels = value; Save(); })));
         PageContent.Children.Add(Description(T("NATIVE_HOTKEY_HINT", "Choose modifiers, a key, and actions, then enable the shortcut. Combinations used by other apps may be unavailable.")));
         var add = AddButton(T("SETTINGS_HOTKEYS_ADD", "Add Hotkey"));
-        add.Click += (_, _) => { _settings.Hotkeys.Add(new HotkeyBinding { Enabled = false }); Save(); RenderPage(); };
+        add.Click += (_, _) => { var binding = new HotkeyBinding { Enabled = false }; _settings.Hotkeys.Add(binding); ExpandNewCard("hotkey:" + binding.Id); Save(); RenderPage(); };
         PageContent.Children.Add(add);
         foreach (var hotkey in _settings.Hotkeys.ToList())
         {
-            var body = new StackPanel { Spacing = 14 };
+            var body = new StackPanel { Spacing = 12 };
             bool IsValid() => (hotkey.NativeKey is "BrightnessUp" or "BrightnessDown" || hotkey.VirtualKey is > 0 and <= 255) && (hotkey.Actions.Count > 0 || hotkey.Action is "increase" or "decrease" or "power");
             body.Children.Add(EditorHeader(hotkey.Enabled && IsValid(), value => { hotkey.Enabled = value && IsValid(); Save(); RenderPage(); }, () => { _settings.Hotkeys.Remove(hotkey); Save(); RenderPage(); }, T("SETTINGS_HOTKEYS_REMOVE", "Remove hotkey")));
             if (!IsValid()) body.Children.Add(new InfoBar { IsOpen = true, IsClosable = false, Severity = InfoBarSeverity.Warning, Message = T("NATIVE_INVALID_HOTKEY", "Choose a valid key and action before enabling this shortcut.") });
@@ -143,15 +153,15 @@ public sealed partial class SettingsWindow
             if (hotkey.NativeKey.Length > 0) body.Children.Add(Description(T("SETTINGS_HOTKEYS_NATIVE_BRIGHTNESS_WARN", "Windows will still adjust the built-in display when a brightness key is pressed. Do not use this shortcut to adjust the built-in display.")));
             if (hotkey.NativeKey.Length == 0)
             {
-            var modifiers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
+            var modifiers = new List<FrameworkElement>();
             foreach (var (bit, label) in new (uint, string)[] { (2, "Ctrl"), (1, "Alt"), (4, "Shift"), (8, "Win") })
             {
                 var modifier = new CheckBox { Content = label, IsChecked = (hotkey.Modifiers & bit) != 0 };
                 modifier.Checked += (_, _) => { hotkey.Modifiers |= bit; Save(); };
                 modifier.Unchecked += (_, _) => { hotkey.Modifiers &= ~bit; Save(); };
-                modifiers.Children.Add(modifier);
+                modifiers.Add(modifier);
             }
-            body.Children.Add(modifiers);
+            body.Children.Add(FieldGrid(modifiers.ToArray()));
             var keys = KeyChoices();
             var selectedKey = hotkey.VirtualKey.ToString(CultureInfo.InvariantCulture);
             if (!keys.Any(k => k.Value == selectedKey)) keys.Add((selectedKey, $"0x{hotkey.VirtualKey:X2}"));
@@ -171,11 +181,14 @@ public sealed partial class SettingsWindow
             {
                 if (hotkey.Actions.Count == 0 && hotkey.Action is "increase" or "decrease" or "power")
                     hotkey.Actions.Add(new HotkeyAction { Type = hotkey.Action == "power" ? "power" : "offset", MonitorId = hotkey.MonitorId, Value = hotkey.Action == "decrease" ? -hotkey.Step : hotkey.Step });
-                hotkey.Actions.Add(new HotkeyAction { Type = "set", Value = 50 });
+                var action = new HotkeyAction { Type = "set", Value = 50 };
+                hotkey.Actions.Add(action);
+                ExpandNewCard("hotkey:" + hotkey.Id + ":action:" + ObjectKey(action));
                 Save(); RenderPage();
             };
             body.Children.Add(addAction);
-            PageContent.Children.Add(Card(body));
+            PageContent.Children.Add(ExpandableCard("hotkey:" + hotkey.Id, () => HotkeySummary(hotkey),
+                () => $"{EnabledSummary(hotkey.Enabled)} · {Math.Max(1, hotkey.Actions.Count)} {T("NATIVE_ACTIONS", "actions")}", body));
         }
     }
 
@@ -183,7 +196,6 @@ public sealed partial class SettingsWindow
     {
         var action = binding.Actions[index];
         var body = new StackPanel { Spacing = 12 };
-        var order = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var up = new Button { Content = T("NATIVE_MOVE_UP", "Move up"), IsEnabled = index > 0 };
         var down = new Button { Content = T("NATIVE_MOVE_DOWN", "Move down"), IsEnabled = index < binding.Actions.Count - 1 };
         void Move(int offset)
@@ -192,14 +204,13 @@ public sealed partial class SettingsWindow
             Save(); RenderPage();
         }
         up.Click += (_, _) => Move(-1); down.Click += (_, _) => Move(1);
-        order.Children.Add(up); order.Children.Add(down);
-        order.Children.Add(DeleteButton(() =>
+        var delete = DeleteButton(() =>
         {
             binding.Actions.Remove(action);
             if (binding.Actions.Count == 0) { binding.Action = ""; binding.Enabled = false; }
             Save(); RenderPage();
-        }));
-        body.Children.Add(order);
+        });
+        body.Children.Add(FieldGrid(up, down, delete));
         body.Children.Add(FieldChoice(T("SETTINGS_HOTKEY_ACTION", "Action"), [
             ("set", T("SETTINGS_HOTKEY_ACTION_SET", "Set value")), ("offset", T("SETTINGS_HOTKEY_ACTION_OFFSET", "Adjust value")),
             ("cycle", T("SETTINGS_HOTKEY_ACTION_CYCLE", "Cycle list of values")), ("power", T("PANEL_BUTTON_TURN_OFF_DISPLAYS", "Turn off displays")),
@@ -229,19 +240,24 @@ public sealed partial class SettingsWindow
                 var maximum = action.Target == "vcp" || action.Type == "vcp" ? 65535 : 100;
                 if (action.Type == "cycle")
                 {
-                    var values = new TextBox { Header = T("SETTINGS_HOTKEY_VALUES", "Values"), Text = string.Join(", ", action.Values.Select(v => v.ToString(CultureInfo.InvariantCulture))), PlaceholderText = "20, 50, 100" };
-                    values.LostFocus += (_, _) =>
+                    string? ValidateCycle(string text)
                     {
                         var parsed = new List<double>();
-                        foreach (var token in values.Text.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                        foreach (var token in text.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
                         {
                             if (!double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) || !double.IsFinite(number) || number < 0 || number > maximum)
-                            { ShowStatus(T("NATIVE_INVALID_VALUES", "Enter comma-separated numeric values within the target's range.")); return; }
+                                return T("NATIVE_INVALID_VALUES", "Enter comma-separated numeric values within the target's range.");
                             parsed.Add(number);
                         }
-                        if (parsed.Count == 0) { ShowStatus(T("NATIVE_VALUES_REQUIRED", "Add at least one value to cycle.")); return; }
-                        action.Values = parsed; Save();
-                    };
+                        return parsed.Count == 0 ? T("NATIVE_VALUES_REQUIRED", "Add at least one value to cycle.") : null;
+                    }
+                    var values = ValidatedText("hotkey:" + binding.Id + ":action:" + ObjectKey(action) + ":values", T("SETTINGS_HOTKEY_VALUES", "Values"),
+                        string.Join(", ", action.Values.Select(v => v.ToString(CultureInfo.InvariantCulture))), text =>
+                        {
+                            action.Values = text.Split([',', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToList();
+                            Save();
+                        }, ValidateCycle);
+                    values.Input.PlaceholderText = "20, 50, 100";
                     body.Children.Add(values);
                 }
                 else
@@ -252,7 +268,8 @@ public sealed partial class SettingsWindow
                 }
             }
         }
-        return new Expander { Header = $"{index + 1}. {T("SETTINGS_HOTKEY_ACTION", "Action")}", Content = body, IsExpanded = true, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        return ExpandableCard("hotkey:" + binding.Id + ":action:" + ObjectKey(action),
+            () => $"{index + 1}. {T("SETTINGS_HOTKEY_ACTION", "Action")}", () => ActionSummary(action), body);
     }
 
     private void RenderFeatures()
@@ -271,8 +288,7 @@ public sealed partial class SettingsWindow
         foreach (var monitor in OrderedMonitors())
         {
             var settings = GetMonitorSettings(monitor.Id);
-            var body = new StackPanel { Spacing = 14 };
-            body.Children.Add(Label(DisplayName(monitor), 18));
+            var body = new StackPanel { Spacing = 12 };
             body.Children.Add(Description($"{monitor.Connection} · HDR: {(monitor.HdrActive ? T("GENERIC_ACTIVE", "Active") : monitor.HdrSupported ? T("GENERIC_SUPPORTED", "Supported") : T("GENERIC_NOT_SUPPORTED", "Not supported"))}"));
             body.Children.Add(FieldChoice(T("NATIVE_MAIN_CONTROL", "Primary brightness control"), [
                 ("brightness", T("PANEL_LABEL_BRIGHTNESS", "Brightness")),
@@ -312,6 +328,7 @@ public sealed partial class SettingsWindow
                         use.Click += (_, _) =>
                         {
                             settings.Features[code] = new FeatureSettings { Enabled = true, Name = feature.Name, Max = (int)Math.Clamp(feature.Maximum, 1u, 65535u) };
+                            ExpandNewCard("feature:" + monitor.Id + ":" + code);
                             Save(); RenderPage();
                         };
                         row.Children.Add(use);
@@ -320,7 +337,7 @@ public sealed partial class SettingsWindow
                 }
                 if (reported.Count == 0) body.Children.Add(Description(T("NATIVE_NO_REPORTED_FEATURES", "No feature capabilities were reported by this display.")));
             }
-            foreach (var pair in settings.Features.OrderBy(pair => pair.Key).ToList()) body.Children.Add(FeatureEditor(settings, pair.Key, pair.Value));
+            foreach (var pair in settings.Features.OrderBy(pair => pair.Key).ToList()) body.Children.Add(FeatureEditor(monitor.Id, settings, pair.Key, pair.Value));
             var newCode = (byte)0x12;
             var input = VcpCodeEditor(newCode, value => newCode = value);
             input.Header = T("SETTINGS_FEATURES_ADD_VCP", "VCP Code");
@@ -328,39 +345,42 @@ public sealed partial class SettingsWindow
             var add = AddButton(T("SETTINGS_FEATURES_ADD", "Add Feature"));
             add.Click += (_, _) =>
             {
-                if (!TryParseVcp(input.Text, out newCode)) { ShowStatus(T("NATIVE_INVALID_VCP", "Enter a VCP code between 0x00 and 0xFF.")); return; }
+                if (!input.TryCommit() || !TryParseVcp(input.Text, out newCode)) return;
                 if (settings.Features.ContainsKey(newCode)) { ShowStatus(T("SETTINGS_FEATURES_ADD_EXISTS", "This feature is already active.")); return; }
                 settings.Features[newCode] = new FeatureSettings { Enabled = true, Name = $"VCP 0x{newCode:X2}" };
+                ExpandNewCard("feature:" + monitor.Id + ":" + newCode);
                 Save(); RenderPage();
             };
             body.Children.Add(add);
-            PageContent.Children.Add(Card(body));
+            PageContent.Children.Add(ExpandableCard("features:" + monitor.Id, () => DisplayName(monitor),
+                () => $"{monitor.Connection} · {settings.Features.Count} {T("NATIVE_FEATURES", "features")}", body, monitor.Id == OrderedMonitors().First().Id));
         }
     }
 
     private StackPanel CalibrationEditor(MonitorSettings settings)
     {
-        var body = new StackPanel { Spacing = 10 };
+        var body = new StackPanel { Spacing = 12 };
         body.Children.Add(Label(T("NATIVE_CALIBRATION", "Brightness calibration")));
         body.Children.Add(Description(T("SETTINGS_MONITORS_CALIBRATION_DESC", "Map panel brightness levels to physical brightness levels using calibration points.")));
         foreach (var point in settings.Calibration.ToList())
         {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
-            var input = DecimalNumber(point.Input, 0, 100, value => { point.Input = value; Save(); });
-            input.Header = T("NATIVE_INPUT", "Input");
-            var output = DecimalNumber(point.Output, 0, 100, value => { point.Output = value; Save(); });
-            output.Header = T("NATIVE_OUTPUT", "Output");
-            row.Children.Add(input); row.Children.Add(output);
-            row.Children.Add(DeleteButton(() => { settings.Calibration.Remove(point); Save(); RenderPage(); }));
-            body.Children.Add(row);
+            var input = ValidatedDecimal("calibration:" + ObjectKey(point) + ":input", T("NATIVE_INPUT", "Input"), point.Input, 0, 100, value => { point.Input = value; Save(); },
+                value => settings.Calibration.Any(other => !ReferenceEquals(other, point) && Math.Abs(other.Input - value) < 0.000001) ? T("NATIVE_DUPLICATE_CALIBRATION", "Use a different input value for each calibration point.") : null);
+            var output = ValidatedDecimal("calibration:" + ObjectKey(point) + ":output", T("NATIVE_OUTPUT", "Output"), point.Output, 0, 100, value => { point.Output = value; Save(); });
+            body.Children.Add(FieldGrid(input, output, DeleteButton(() => { settings.Calibration.Remove(point); Save(); RenderPage(); })));
         }
         var add = AddButton(T("GENERIC_CALIBRATION_POINT", "Calibration Point"));
-        add.Click += (_, _) => { settings.Calibration.Add(new CalibrationPoint { Input = 50, Output = 50 }); Save(); RenderPage(); };
+        add.IsEnabled = settings.Calibration.Count < 101;
+        add.Click += (_, _) =>
+        {
+            var input = Enumerable.Range(0, 101).OrderBy(value => Math.Abs(value - 50)).FirstOrDefault(value => settings.Calibration.All(point => Math.Abs(point.Input - value) > 0.000001));
+            settings.Calibration.Add(new CalibrationPoint { Input = input, Output = input }); Save(); RenderPage();
+        };
         body.Children.Add(add);
         return body;
     }
 
-    private Expander FeatureEditor(MonitorSettings monitor, byte code, FeatureSettings feature)
+    private Expander FeatureEditor(string monitorId, MonitorSettings monitor, byte code, FeatureSettings feature)
     {
         var body = new StackPanel { Spacing = 12 };
         body.Children.Add(EditorHeader(feature.Enabled, value => { feature.Enabled = value; Save(); }, () => { monitor.Features.Remove(code); Save(); RenderPage(); }, T("GENERIC_DELETE", "Delete")));
@@ -398,21 +418,26 @@ public sealed partial class SettingsWindow
         body.Children.Add(min); body.Children.Add(max);
         body.Children.Add(InlineRow(T("SETTINGS_FEATURES_LINKED_TO_BRIGHTNESS", "Linked to brightness"), Toggle(feature.LinkedToBrightness, value => { feature.LinkedToBrightness = value; Save(); })));
         body.Children.Add(FieldNumber(T("SETTINGS_FEATURES_STOP_ON_BRIGHTNESS", "Stop after this brightness level"), feature.MaxVisual, 1, 100, value => { feature.MaxVisual = value; Save(); }));
-        return new Expander { Header = $"0x{code:X2} · {feature.Name}", Content = body, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        return ExpandableCard("feature:" + monitorId + ":" + code, () => $"0x{code:X2} · {feature.Name}",
+            () => $"{EnabledSummary(feature.Enabled)} · {feature.Min}–{feature.Max}", body);
     }
 
     private void RenderProfiles()
     {
         Heading(T("SETTINGS_PROFILES_TITLE", "Profiles"), T("SETTINGS_PROFILES_DESC", "Adjust display brightness for foreground apps, or apply profiles from the tray menu."));
         var add = AddButton(T("SETTINGS_PROFILES_ADD", "New Profile"));
-        add.Click += (_, _) => { _settings.Profiles.Add(new AppProfile { Name = T("SETTINGS_PROFILES_ADD", "New Profile") }); Save(); RenderPage(); };
+        add.Click += (_, _) =>
+        {
+            var profile = new AppProfile { Name = T("SETTINGS_PROFILES_ADD", "New Profile") };
+            _settings.Profiles.Add(profile); ExpandNewCard("profile:" + profile.Id); Save(); RenderPage();
+        };
         PageContent.Children.Add(add);
         foreach (var profile in _settings.Profiles.ToList())
         {
-            var body = new StackPanel { Spacing = 14 };
+            var body = new StackPanel { Spacing = 12 };
             body.Children.Add(EditorHeader(profile.Enabled, value => { profile.Enabled = value; Save(); }, () => { _settings.Profiles.Remove(profile); Save(); RenderPage(); }, T("GENERIC_DELETE", "Delete")));
-            body.Children.Add(TextEditor(T("SETTINGS_PROFILES_NAME", "Profile Name"), profile.Name, value => { profile.Name = value; Save(); }));
-            body.Children.Add(TextEditor(T("SETTINGS_PROFILES_APP_PATH", "App path"), profile.Path, value => { profile.Path = value; Save(); }));
+            body.Children.Add(TextEditor(T("SETTINGS_PROFILES_NAME", "Profile Name"), profile.Name, value => { profile.Name = value; Save(); }, "profile:" + profile.Id + ":name"));
+            body.Children.Add(TextEditor(T("SETTINGS_PROFILES_APP_PATH", "App path"), profile.Path, value => { profile.Path = value; Save(); }, "profile:" + profile.Id + ":path"));
             body.Children.Add(Description(T("SETTINGS_PROFILES_APP_DESC", "Use all or part of an executable path to activate this profile for the foreground app.")));
             body.Children.Add(InlineRow(T("NATIVE_PROFILE_RESTORE", "Restore previous brightness when leaving this app"), Toggle(profile.RestorePrevious, value => { profile.RestorePrevious = value; Save(); })));
             body.Children.Add(InlineRow(T("SETTINGS_PROFILES_SHOW_MENU", "Show in right-click tray menu"), Toggle(profile.ShowInTray, value => { profile.ShowInTray = value; Save(); })));
@@ -423,7 +448,8 @@ public sealed partial class SettingsWindow
             body.Children.Add(MonitorLevelEditors(profile.Brightness));
             if (_actions.ApplyProfileAsync is not null)
                 body.Children.Add(ActionButton(T("NATIVE_APPLY_PROFILE", "Apply profile now"), () => _actions.ApplyProfileAsync(profile)));
-            PageContent.Children.Add(Card(body));
+            PageContent.Children.Add(ExpandableCard("profile:" + profile.Id, () => profile.Name,
+                () => $"{EnabledSummary(profile.Enabled)} · {profile.Brightness.Count} {T("NATIVE_DISPLAYS", "displays")}" + (string.IsNullOrWhiteSpace(profile.Path) ? "" : " · " + profile.Path), body));
         }
     }
 
@@ -440,21 +466,17 @@ public sealed partial class SettingsWindow
             Number(sensor.PollSeconds, 1, 3600, value => { sensor.PollSeconds = value; Save(); })));
         if (sensor.Provider == "yocto")
         {
-            PageContent.Children.Add(Card(TextEditor(T("SETTINGS_LIGHT_SENSOR_YOCTO_URL_LABEL", "VirtualHub URL"), sensor.Endpoint, value =>
-            {
-                if (!Uri.TryCreate(value, UriKind.Absolute, out var endpoint) || endpoint.Scheme is not ("http" or "https") || string.IsNullOrEmpty(endpoint.Host) || endpoint.UserInfo.Length != 0 || endpoint.Query.Length != 0 || endpoint.Fragment.Length != 0)
-                { ShowStatus(T("NATIVE_INVALID_ENDPOINT", "Enter an absolute HTTP or HTTPS sensor URL.")); return; }
-                sensor.Endpoint = value; Save();
-            })));
+            PageContent.Children.Add(Card(ValidatedText("sensor:endpoint", T("SETTINGS_LIGHT_SENSOR_YOCTO_URL_LABEL", "VirtualHub URL"), sensor.Endpoint,
+                value => { sensor.Endpoint = value; Save(); }, value =>
+                    !Uri.TryCreate(value, UriKind.Absolute, out var endpoint) || endpoint.Scheme is not ("http" or "https") || string.IsNullOrEmpty(endpoint.Host) || endpoint.UserInfo.Length != 0 || endpoint.Query.Length != 0 || endpoint.Fragment.Length != 0
+                        ? T("NATIVE_INVALID_ENDPOINT", "Enter an absolute HTTP or HTTPS sensor URL.") : null)));
             PageContent.Children.Add(Description(T("SETTINGS_LIGHT_SENSOR_YOCTO_INSTALL_DESC", "Run Yocto VirtualHub to communicate with a connected Yocto light sensor.")));
         }
         if (sensor.Provider is "windows" or "yocto")
-            PageContent.Children.Add(Card(TextEditor(T("NATIVE_SENSOR_HARDWARE", "Sensor hardware ID (empty = first available)"), sensor.HardwareId, value =>
-            {
-                if (sensor.Provider == "yocto" && (value.Count(c => c == '.') > 1 || value.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('-' or '_' or '.'))))
-                { ShowStatus(T("NATIVE_INVALID_SENSOR_ID", "A Yocto sensor serial may contain letters, digits, hyphens, and underscores.")); return; }
-                sensor.HardwareId = value; Save();
-            })));
+            PageContent.Children.Add(Card(ValidatedText("sensor:hardware", T("NATIVE_SENSOR_HARDWARE", "Sensor hardware ID (empty = first available)"), sensor.HardwareId,
+                value => { sensor.HardwareId = value; Save(); }, value =>
+                    sensor.Provider == "yocto" && (value.Count(c => c == '.') > 1 || value.StartsWith('.') || value.EndsWith('.') || value.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('-' or '_' or '.')))
+                        ? T("NATIVE_INVALID_SENSOR_ID", "Use a serial number or serial.function sensor ID.") : null)));
         if (sensor.Provider != "fake" && _actions.QuerySensorsAsync is not null)
             PageContent.Children.Add(ActionButton(T("NATIVE_QUERY_SENSORS", "Find connected sensors"), async () => { _sensorDevices = await _actions.QuerySensorsAsync(); RenderPage(); }));
         if (_sensorDevices.Count > 0)
@@ -475,30 +497,11 @@ public sealed partial class SettingsWindow
             var body = new StackPanel { Spacing = 12 };
             body.Children.Add(Label(DisplayName(monitor), 18));
             body.Children.Add(InlineRow(T("NATIVE_ENABLED", "Enabled"), Toggle(range.Enabled, value => { range.Enabled = value; Save(); })));
-            var minLux = DecimalNumber(range.MinLux, 0, 999999, _ => { });
-            minLux.Header = T("NATIVE_MIN_LUX", "Minimum ambient light (Lux)");
-            var maxLux = DecimalNumber(range.MaxLux, 0.1, 1000000, _ => { });
-            maxLux.Header = T("NATIVE_MAX_LUX", "Maximum ambient light (Lux)");
-            var updating = false;
-            minLux.ValueChanged += (_, args) =>
-            {
-                if (updating || !double.IsFinite(args.NewValue)) return;
-                updating = true;
-                range.MinLux = args.NewValue;
-                range.MaxLux = Math.Max(range.MaxLux, range.MinLux + 0.1);
-                maxLux.Value = range.MaxLux;
-                updating = false; Save();
-            };
-            maxLux.ValueChanged += (_, args) =>
-            {
-                if (updating || !double.IsFinite(args.NewValue)) return;
-                updating = true;
-                range.MaxLux = args.NewValue;
-                range.MinLux = Math.Min(range.MinLux, range.MaxLux - 0.1);
-                minLux.Value = range.MinLux;
-                updating = false; Save();
-            };
-            body.Children.Add(minLux); body.Children.Add(maxLux);
+            var minLux = ValidatedDecimal("sensor:" + monitor.Id + ":minimum", T("NATIVE_MIN_LUX", "Minimum ambient light (Lux)"), range.MinLux, 0, 999999,
+                value => { range.MinLux = value; Save(); }, value => value >= range.MaxLux ? T("NATIVE_MIN_BELOW_MAX", "The minimum must be below the maximum.") : null);
+            var maxLux = ValidatedDecimal("sensor:" + monitor.Id + ":maximum", T("NATIVE_MAX_LUX", "Maximum ambient light (Lux)"), range.MaxLux, 0.1, 1000000,
+                value => { range.MaxLux = value; Save(); }, value => value <= range.MinLux ? T("NATIVE_MAX_ABOVE_MIN", "The maximum must be above the minimum.") : null);
+            body.Children.Add(FieldGrid(minLux, maxLux));
             body.Children.Add(BrightnessEditor(range.MinBrightness, value => { range.MinBrightness = value; Save(); }, T("NATIVE_MIN_BRIGHTNESS", "Minimum brightness")));
             body.Children.Add(BrightnessEditor(range.MaxBrightness, value => { range.MaxBrightness = value; Save(); }, T("NATIVE_MAX_BRIGHTNESS", "Maximum brightness")));
             PageContent.Children.Add(Card(body));
@@ -601,24 +604,22 @@ public sealed partial class SettingsWindow
     private static ComboBox FieldChoice(string title, IEnumerable<(string Value, string Label)> choices, string selected, Action<string> changed)
     {
         var control = Choice(choices, selected, changed);
-        control.Header = title;
+        control.Header = Label(title);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(control, "field:" + LabelKey(title));
         return control;
     }
 
     private static NumberBox FieldNumber(string title, int value, int min, int max, Action<int> changed)
     {
         var control = Number(value, min, max, changed);
-        control.Header = title;
-        control.Width = 250;
+        control.Header = Label(title);
+        control.Width = 180;
+        control.MinWidth = 0;
         return control;
     }
 
-    private static TextBox TextEditor(string title, string value, Action<string> changed)
-    {
-        var text = new TextBox { Header = title, Text = value, HorizontalAlignment = HorizontalAlignment.Stretch };
-        text.LostFocus += (_, _) => { if (text.Text != value) { value = text.Text; changed(value.Trim()); } };
-        return text;
-    }
+    private SettingsTextField TextEditor(string title, string value, Action<string> changed, string? key = null) =>
+        ValidatedText(key ?? LabelKey(title), title, value, changed);
 
     private static NumberBox DecimalNumber(double value, double min, double max, Action<double> changed)
     {
@@ -627,15 +628,11 @@ public sealed partial class SettingsWindow
         return number;
     }
 
-    private TextBox VcpCodeEditor(byte value, Action<byte> changed)
+    private SettingsTextField VcpCodeEditor(byte value, Action<byte> changed)
     {
-        var text = new TextBox { Text = $"0x{value:X2}", Width = 180, HorizontalAlignment = HorizontalAlignment.Left };
-        text.LostFocus += (_, _) =>
-        {
-            if (!TryParseVcp(text.Text, out var code)) { text.Text = $"0x{value:X2}"; ShowStatus(T("NATIVE_INVALID_VCP", "Enter a VCP code between 0x00 and 0xFF.")); return; }
-            value = code; text.Text = $"0x{code:X2}"; changed(code);
-        };
-        return text;
+        return ValidatedText("vcp", T("SETTINGS_FEATURES_ADD_VCP", "VCP Code"), $"0x{value:X2}", text =>
+            { if (TryParseVcp(text, out var code)) changed(code); },
+            text => TryParseVcp(text, out _) ? null : T("NATIVE_INVALID_VCP", "Enter a VCP code between 0x00 and 0xFF."));
     }
 
     private static bool TryParseVcp(string text, out byte value)
@@ -660,7 +657,7 @@ public sealed partial class SettingsWindow
         {
             button.IsEnabled = false;
             try { await action(); }
-            catch (Exception error) { ShowStatus(error.Message); }
+            catch (Exception error) { ShowError(error.Message); }
             finally { button.IsEnabled = true; }
         };
         return button;

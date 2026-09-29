@@ -15,7 +15,7 @@ internal sealed class UpdateService : IDisposable
 {
     private readonly HttpClient _http;
     private readonly string _downloadRoot;
-    internal static string CurrentVersion => (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.1").Split('+')[0];
+    internal static string CurrentVersion => (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.2").Split('+')[0];
     public AvailableUpdate? Available { get; private set; }
 
     public UpdateService() : this(new HttpClient { Timeout = TimeSpan.FromMinutes(10) },
