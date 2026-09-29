@@ -55,7 +55,7 @@ internal sealed partial class AppController
         _tray.HotkeyPressed += binding => _ = HandleHotkeyAsync(binding);
         _tray.Scrolled += steps => _ = OffsetAllAsync(steps * Settings.TrayScrollStep * (Settings.InvertScroll ? -1 : 1));
         _tray.ProfileRequested += profile => _ = ApplyProfileAsync(profile);
-        _tray.PauseRequested += () => { _automationPaused = !_automationPaused; _tray.AutomationPaused = _automationPaused; if (_automationPaused) foreach (var transition in _transitions.Values) transition.Cancel(); };
+        _tray.PauseRequested += () => { _automationPaused = !_automationPaused; _tray.AutomationPaused = _automationPaused; if (_automationPaused) SuspendAutomationTransitions(); };
         _tray.PowerRequested += () => _ = PowerOffAsync("all");
         _tray.LidChanged += closed => { _lidClosed = closed; _window.RenderMonitors(); };
         _tray.DisplaysChanged += () => { if (!Settings.DisableAutoRefresh) { _restoreAfterRefresh = !Settings.DisableAutoApply; _hotplug.Interval = TimeSpan.FromSeconds(Math.Max(1, Settings.HardwareRestoreSeconds)); _hotplug.Stop(); _hotplug.Start(); } };
@@ -120,7 +120,9 @@ internal sealed partial class AppController
     public async Task TrySetAsync(string id, double value, bool contrast = false, bool linked = false, bool throwOnError = false, bool automatic = false)
     {
         if (!automatic && !contrast)
-            foreach (var pair in _transitions.Where(x => linked || id == "all" || x.Key == id).ToArray()) pair.Value.Cancel();
+        {
+            foreach (var monitor in _monitors.Where(m => linked || id == "all" || m.Id == id)) CancelManualTransition(monitor.Id);
+        }
         await _operations.WaitAsync();
         try
         {
@@ -239,7 +241,7 @@ internal sealed partial class AppController
     private async Task<string> HandleCommandAsync(CommandLineOptions command)
     {
         if (command.Settings) { OpenSettings(); return "OK"; }
-        if (command.UseTime) { await ApplyLevelsAsync(ScheduleEvaluator.GetCurrentLevels(Settings, DateTime.Now, VisibleMonitors.Select(m => m.Id)), false); if (command.Overlay) ShowOverlay(); if (command.Panel) _window.ShowPanel(); return "OK"; }
+        if (command.UseTime) { await ApplyManualLevelsAsync(ScheduleEvaluator.GetCurrentLevels(Settings, DateTime.Now, VisibleMonitors.Select(m => m.Id)), false); if (command.Overlay) ShowOverlay(); if (command.Panel) _window.ShowPanel(); return "OK"; }
         if (command.List) return JsonSerializer.Serialize(_monitors.Select((m, i) => new { Number = i + 1, m.Id, m.Name, m.Connection, Brightness = LogicalBrightness(m), RawBrightness = m.Brightness, m.SupportsBrightness, m.SupportsContrast, m.Contrast, m.HdrSupported, m.HdrActive, m.SdrBrightness, m.GammaBrightness }), new JsonSerializerOptions { WriteIndented = true });
         var selected = CliRunner.Select(_monitors, command).Where(m => command.Vcp is not null || CanControl(m)).ToArray();
         if (command.HasMonitorCommand && selected.Length == 0) throw new InvalidOperationException("No matching displays were detected.");
@@ -247,9 +249,7 @@ internal sealed partial class AppController
         {
             if (command.Vcp is { } vcp)
             {
-                await _operations.WaitAsync();
-                try { if (!IsDemo) await _hardware.SetVcpAsync(monitor.Id, vcp.Code, vcp.Value, _lifetime.Token); }
-                finally { _operations.Release(); }
+                await SetFeatureAsync(monitor.Id, vcp.Code, vcp.Value);
             }
             else await TrySetAsync(monitor.Id, command.Set ?? LogicalBrightness(monitor) + (command.Offset ?? 0), throwOnError: true);
         }

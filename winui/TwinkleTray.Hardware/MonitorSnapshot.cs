@@ -16,6 +16,8 @@ public sealed record MonitorSnapshot(
     public byte BrightnessVcp { get; init; } = 0x10;
     public bool HdrSupported { get; init; }
     public bool HdrActive { get; init; }
+    /// <summary>True only when the current HDR/SDR mode was successfully observed; false means unknown.</summary>
+    public bool HdrModeKnown { get; init; }
     public double? SdrBrightness { get; init; }
     public double? GammaBrightness { get; init; }
     public bool SupportsGammaBrightness => GammaBrightness.HasValue && !HdrActive;

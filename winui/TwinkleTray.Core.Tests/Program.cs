@@ -138,7 +138,7 @@ var tests = new (string Name, Action Run)[]
 };
 
 var failed = 0;
-var allTests = tests.Concat(ExtendedTests.All).ToArray();
+var allTests = tests.Concat(ExtendedTests.All).Concat(AutomationEdgeTests.All).ToArray();
 foreach (var (name, run) in allTests)
 {
     try

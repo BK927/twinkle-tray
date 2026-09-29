@@ -69,6 +69,16 @@ jobs:
         working-directory: winui
         run: dotnet run --project TwinkleTray.Hardware/Diagnostics --configuration Release -- --read-only
 
+      - name: Verify hardware-exercise recovery with simulated devices
+        if: matrix.architecture == 'x64'
+        working-directory: winui
+        run: |
+          $report = Join-Path $PWD 'artifacts/hardware-exercise-self-test.json'
+          dotnet run --no-build --project TwinkleTray.Hardware/Diagnostics --configuration Release -- --exercise-self-test --report $report
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $gammaReport = Join-Path $PWD 'artifacts/gamma-exercise-self-test.json'
+          dotnet run --no-build --project TwinkleTray.Hardware/Diagnostics --configuration Release -- --exercise-gamma-self-test --report $gammaReport
+
       - name: Create portable ZIP and validate unsigned MSIX
         run: ./winui/package.ps1 -Architecture '${{ matrix.architecture }}'
 

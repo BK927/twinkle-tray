@@ -13,11 +13,20 @@ internal sealed record AvailableUpdate(string Version, string Notes, Uri Page, U
 
 internal sealed class UpdateService : IDisposable
 {
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(10) };
-    internal static string CurrentVersion => (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.0").Split('+')[0];
+    private readonly HttpClient _http;
+    private readonly string _downloadRoot;
+    internal static string CurrentVersion => (Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0.2.1").Split('+')[0];
     public AvailableUpdate? Available { get; private set; }
 
-    public UpdateService() => _http.DefaultRequestHeaders.UserAgent.ParseAdd("TwinkleTray-WinUI/" + CurrentVersion);
+    public UpdateService() : this(new HttpClient { Timeout = TimeSpan.FromMinutes(10) },
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TwinkleTray.WinUI.Updates")) { }
+
+    internal UpdateService(HttpClient http, string downloadRoot)
+    {
+        _http = http;
+        _downloadRoot = Path.GetFullPath(downloadRoot);
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("TwinkleTray-WinUI/" + CurrentVersion);
+    }
 
     public async Task<AvailableUpdate?> CheckAsync(bool includePrerelease, CancellationToken cancellationToken)
     {
@@ -56,7 +65,7 @@ internal sealed class UpdateService : IDisposable
     public async Task<string> DownloadAsync(CancellationToken cancellationToken)
     {
         var update = Available ?? throw new InvalidOperationException("Check for updates first.");
-        string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TwinkleTray.WinUI.Updates", Guid.NewGuid().ToString("N"));
+        string root = Path.Combine(_downloadRoot, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         string archive = Path.Combine(root, update.FileName);
         string checksums = await _http.GetStringAsync(update.Checksums, cancellationToken);

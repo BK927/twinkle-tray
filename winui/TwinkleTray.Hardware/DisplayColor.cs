@@ -4,7 +4,10 @@ using System.Runtime.InteropServices;
 namespace TwinkleTray.Hardware;
 
 internal sealed record ColorDisplay(string DeviceId, string DeviceName, string Name,
-    bool HdrSupported, bool HdrActive, double? SdrBrightness, DisplayColor.Luid Adapter, uint Target);
+    bool HdrSupported, bool HdrActive, double? SdrBrightness, DisplayColor.Luid Adapter, uint Target)
+{
+    internal bool HdrModeKnown { get; init; }
+}
 
 internal static class DisplayColor
 {
@@ -29,11 +32,12 @@ internal static class DisplayColor
                 var source = new SourceName { Header = Header.For<SourceName>(1, path.Source.Adapter, path.Source.Id) };
                 if (GetSourceName(ref source) != 0) continue;
                 var modern = new AdvancedColor2 { Header = Header.For<AdvancedColor2>(15, path.Target.Adapter, path.Target.Id) };
-                bool supported = false, active = false;
+                bool supported = false, active = false, modeKnown = false;
                 if (GetAdvancedColor2(ref modern) == 0)
                 {
                     supported = (modern.Value & 0x10) != 0;
                     active = modern.ActiveColorMode == 2;
+                    modeKnown = true;
                 }
                 else
                 {
@@ -43,7 +47,7 @@ internal static class DisplayColor
                         supported = (legacy.Value & 1) != 0;
                         // Legacy advancedColorEnabled also covers ACM. DXGI distinguishes HDR
                         // without changing SDR white level just to test the current mode.
-                        active = legacyHdr.GetValueOrDefault(source.Name);
+                        modeKnown = legacyHdr.TryGetValue(source.Name, out active);
                     }
                 }
                 double? brightness = null;
@@ -51,7 +55,8 @@ internal static class DisplayColor
                 var white = new WhiteLevel { Header = Header.For<WhiteLevel>(11, path.Target.Adapter, path.Target.Id) };
                 if ((active || forceHdr?.Contains(id) == true) && GetWhiteLevel(ref white) == 0)
                     brightness = Math.Clamp((white.Level * 80d / 1000d - 80) / 4d, 0, 100);
-                result[id] = new ColorDisplay(id, source.Name, target.Name, supported, active, brightness, path.Target.Adapter, path.Target.Id);
+                result[id] = new ColorDisplay(id, source.Name, target.Name, supported, active, brightness, path.Target.Adapter, path.Target.Id)
+                    { HdrModeKnown = modeKnown };
             }
             return result;
         }

@@ -2,10 +2,18 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using TwinkleTray.Hardware;
 
-// No path in this program calls a hardware write method with valid arguments.
+// The existing diagnostic remains read-only. Real writes require a separate,
+// explicit exercise flag and a durable recovery report path.
+if (args.Contains("--exercise-gamma-only", StringComparer.Ordinal) || args.Contains("--exercise-gamma-self-test", StringComparer.Ordinal))
+    return await GammaExercise.RunAsync(args);
+
+if (args.Contains("--exercise-safe", StringComparer.Ordinal) || args.Contains("--exercise-self-test", StringComparer.Ordinal))
+    return await SafeExercise.RunAsync(args);
+
 if (!args.Contains("--read-only", StringComparer.Ordinal))
 {
     Console.WriteLine("Use --read-only to enumerate displays twice and check monitor service invariants. No hardware values are written.");
+    Console.WriteLine("Opt-in Windows x64 DDC exercise: --exercise-safe --report <absolute-json-path>. Fake-only harness tests: --exercise-self-test --report <absolute-json-path>.");
     return 0;
 }
 

@@ -137,7 +137,7 @@ public sealed partial class MonitorService
                 {
                     Name = string.IsNullOrWhiteSpace(color.Name) ? display.Snapshot.Name : color.Name,
                     DeviceName = color.DeviceName, HdrSupported = color.HdrSupported,
-                    HdrActive = color.HdrActive, SdrBrightness = color.SdrBrightness
+                    HdrActive = color.HdrActive, HdrModeKnown = color.HdrModeKnown, SdrBrightness = color.SdrBrightness
                 }
             };
         }

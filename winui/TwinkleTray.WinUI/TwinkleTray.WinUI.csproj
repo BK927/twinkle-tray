@@ -20,7 +20,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <Description>Community WinUI 3 port of Twinkle Tray</Description>
   </PropertyGroup>
   <ItemGroup>

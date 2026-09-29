@@ -15,22 +15,26 @@ internal sealed partial class AppController
     private string? _lastAutomationError;
     private DateTime? _idleRestoreDue;
     private readonly Dictionary<string, double> _transitionTargets = new();
+    private readonly Dictionary<string, double> _interruptedLevels = new();
     private bool _schedulePending;
 
-    private async Task TickAsync()
+    private sealed record AutomationObservation(DateTime Now, bool Locked, string? Foreground, TimeSpan Idle, bool Fullscreen, bool MediaPlaying);
+
+    private async Task TickAsync(AutomationObservation? simulation = null)
     {
-        if (_tickBusy || _quitting || IsSmokeTest) return;
+        if (simulation is not null && !(IsSmokeTest && IsDemo)) throw new InvalidOperationException("Simulated observations require smoke-test demo mode.");
+        if (_tickBusy || _quitting || (IsSmokeTest && simulation is null)) return;
         _tickBusy = true;
         try
         {
-            DateTime now = DateTime.Now;
+            DateTime now = simulation?.Now ?? DateTime.Now;
             if (_brightnessDirty && (now - _lastPersist).TotalSeconds >= 5) PersistLevels();
             if (Settings.CheckForUpdates && !IsDemo && (now - _lastUpdate).TotalHours >= 24)
             {
                 _lastUpdate = now;
                 _ = CheckUpdatesAsync(false);
             }
-            bool locked = Settings.DisableOnLockScreen && DesktopEnvironment.IsSessionLocked() == true;
+            bool locked = Settings.DisableOnLockScreen && (simulation?.Locked ?? DesktopEnvironment.IsSessionLocked() == true);
             if (Settings.PollBrightness && !locked && !_dimmed && (now - _lastPoll).TotalSeconds >= Settings.PollSeconds)
             {
                 _lastPoll = now;
@@ -41,13 +45,20 @@ internal sealed partial class AppController
             if (due.Count > 0) _schedulePending = true;
             if (_automationPaused || locked)
             {
-                foreach (var transition in _transitions.Values) transition.Cancel();
-                if (!locked) await UpdateIdleAsync(false);
+                SuspendAutomationTransitions();
+                if (!locked) await UpdateIdleAsync(false, simulation);
                 return;
             }
 
+            if (_interruptedLevels.Count > 0)
+            {
+                var resume = _interruptedLevels.ToDictionary();
+                _interruptedLevels.Clear();
+                await ApplyLevelsAsync(resume);
+            }
+
             // Automatic control priority is idle > foreground profile > light sensor > schedule.
-            string? foreground = DesktopEnvironment.GetForegroundProcessPath();
+            string? foreground = simulation is null ? DesktopEnvironment.GetForegroundProcessPath() : simulation.Foreground;
             bool ownWindow = foreground is not null && Path.GetFileName(foreground).Equals("TwinkleTray.WinUI.exe", StringComparison.OrdinalIgnoreCase);
             if (!ownWindow)
             {
@@ -59,7 +70,7 @@ internal sealed partial class AppController
                     if (profile is not null)
                     {
                         foreach (var monitor in VisibleMonitors.Where(CanControl)) _beforeProfile[monitor.Id] = _dimmed ? _beforeIdle.GetValueOrDefault(monitor.Id, LogicalBrightness(monitor)) : LogicalBrightness(monitor);
-                        await ApplyProfileAsync(profile);
+                        await ApplyProfileAsync(profile, automatic: true);
                     }
                 }
             }
@@ -84,7 +95,7 @@ internal sealed partial class AppController
                 else if (_sensor.LastError is { } error) ReportAutomationError(error);
             }
 
-            await UpdateIdleAsync(true);
+            await UpdateIdleAsync(true, simulation);
             _lastAutomationError = null;
         }
         catch (OperationCanceledException) { }
@@ -92,24 +103,62 @@ internal sealed partial class AppController
         finally { _tickBusy = false; }
     }
 
-    private async Task UpdateIdleAsync(bool allowDim)
+    private void SuspendAutomationTransitions()
     {
-            bool idle = allowDim && !Settings.DisableAutoApply && Settings.IdleEnabled && DesktopEnvironment.IdleTime.TotalSeconds >= Settings.IdleMinutes * 60 + Settings.IdleSeconds;
-            if (idle && Settings.IdleCheckFullscreen && DesktopEnvironment.IsFullscreen()) idle = false;
-            if (idle && Settings.IdleCheckMedia && await DesktopEnvironment.IsMediaPlayingAsync(_lifetime.Token)) idle = false;
+        foreach (var (id, transition) in _transitions.ToArray())
+        {
+            if (!transition.IsCancellationRequested && _transitionTargets.TryGetValue(id, out var target)) _interruptedLevels[id] = target;
+            transition.Cancel();
+        }
+    }
+
+    private void CancelManualTransition(string id)
+    {
+        _interruptedLevels.Remove(id);
+        if (_transitions.TryGetValue(id, out var transition)) transition.Cancel();
+    }
+
+    private bool IsMainBrightnessChannel(MonitorSnapshot monitor, string channel)
+    {
+        var preferences = Preferences(monitor.Id);
+        if (preferences.MainControl == channel) return true;
+        return channel == "gamma" && preferences.MainControl == "brightness" &&
+            (preferences.ExtendMinimum || preferences.SoftwareFallback && !monitor.SupportsBrightness);
+    }
+
+    private void RememberManualChannelLevel(MonitorSnapshot monitor)
+    {
+        double level = LogicalBrightness(monitor);
+        if (_dimmed) _beforeIdle[monitor.Id] = level;
+        else Settings.LastBrightness[monitor.Id] = level;
+        _brightnessDirty = true;
+    }
+
+    private async Task UpdateIdleAsync(bool allowDim, AutomationObservation? simulation = null)
+    {
+            DateTime now = simulation?.Now ?? DateTime.Now;
+            bool idle = allowDim && !Settings.DisableAutoApply && Settings.IdleEnabled && (simulation?.Idle ?? DesktopEnvironment.IdleTime).TotalSeconds >= Settings.IdleMinutes * 60 + Settings.IdleSeconds;
+            if (idle && Settings.IdleCheckFullscreen && (simulation?.Fullscreen ?? DesktopEnvironment.IsFullscreen())) idle = false;
+            if (idle && Settings.IdleCheckMedia && (simulation?.MediaPlaying ?? await DesktopEnvironment.IsMediaPlayingAsync(_lifetime.Token))) idle = false;
             if (idle && !_dimmed)
             {
-                foreach (var transition in _transitions.Values) transition.Cancel();
                 _beforeIdle.Clear();
-                foreach (var monitor in VisibleMonitors.Where(m => CanControl(m) && !Preferences(m.Id).SkipRestore)) _beforeIdle[monitor.Id] = LogicalBrightness(monitor);
+                foreach (var monitor in VisibleMonitors.Where(m => CanControl(m) && !Preferences(m.Id).SkipRestore))
+                {
+                    // A schedule/profile may have just started a transition on this tick.
+                    // Resume its destination after idle, rather than losing it at an intermediate level.
+                    bool transitioning = _transitions.TryGetValue(monitor.Id, out var transition) && !transition.IsCancellationRequested;
+                    _beforeIdle[monitor.Id] = transitioning && _transitionTargets.TryGetValue(monitor.Id, out var target) ? target : LogicalBrightness(monitor);
+                }
+                foreach (var transition in _transitions.Values) transition.Cancel();
                 _dimmed = true;
                 foreach (var id in _beforeIdle.Keys) await TrySetAsync(id, Settings.IdleBrightness, automatic: true);
                 if (_window.IsShown) _window.RenderMonitors();
             }
             else if (!idle && _dimmed)
             {
-                _idleRestoreDue ??= DateTime.Now.AddSeconds(Settings.IdleRestoreSeconds);
-                if (DateTime.Now < _idleRestoreDue) return;
+                _idleRestoreDue ??= now.AddSeconds(Settings.IdleRestoreSeconds);
+                if (now < _idleRestoreDue) return;
                 var restored = _beforeIdle.ToDictionary(); _beforeIdle.Clear(); _dimmed = false;
                 _idleRestoreDue = null;
                 await ApplyLevelsAsync(restored, false);
@@ -136,7 +185,8 @@ internal sealed partial class AppController
             if (Math.Abs(start - pair.Value) < .75) continue;
             if (smooth && Settings.SmoothTransitions && Settings.TransitionSeconds > 0)
             {
-                if (!_transitionTargets.TryGetValue(pair.Key, out var target) || Math.Abs(target - pair.Value) >= .75) _ = TransitionAsync(pair.Key, start, pair.Value);
+                if (!_transitions.TryGetValue(pair.Key, out var running) || running.IsCancellationRequested ||
+                    !_transitionTargets.TryGetValue(pair.Key, out var target) || Math.Abs(target - pair.Value) >= .75) _ = TransitionAsync(pair.Key, start, pair.Value);
             }
             else work.Add(TrySetAsync(pair.Key, pair.Value, automatic: true));
         }
@@ -169,9 +219,20 @@ internal sealed partial class AppController
     private async Task RestoreSavedLevelsAsync() => await ApplyLevelsAsync(Settings.LastBrightness
         .Where(x => !Preferences(x.Key).SkipRestore).ToDictionary(x => x.Key, x => x.Value), false);
 
-    private async Task ApplyProfileAsync(AppProfile profile)
+    private Task ApplyManualLevelsAsync(IReadOnlyDictionary<string, double> levels, bool smooth = true)
     {
-        await ApplyLevelsAsync(profile.Brightness.ToDictionary(x => x.Key, x => (double)x.Value));
+        // Clear earlier intent even when the requested value already matches the current level.
+        foreach (var id in levels.Keys) CancelManualTransition(id);
+        return ApplyLevelsAsync(levels, smooth);
+    }
+
+    private Task ApplyProfileAsync(AppProfile profile) => ApplyProfileAsync(profile, automatic: false);
+
+    private async Task ApplyProfileAsync(AppProfile profile, bool automatic)
+    {
+        var levels = profile.Brightness.ToDictionary(x => x.Key, x => (double)x.Value);
+        if (automatic) await ApplyLevelsAsync(levels);
+        else await ApplyManualLevelsAsync(levels);
         _window.RenderMonitors();
         if (profile.OverlayType is not ("none" or "disabled")) ShowOverlay(profile.OverlayType is "force" or "aggressive");
     }
@@ -207,6 +268,8 @@ internal sealed partial class AppController
             {
                 if (action.Type == "offset") value += action.Target == "gamma" ? monitor.GammaBrightness ?? 100 : monitor.SdrBrightness ?? 0;
                 value = Math.Clamp(value, action.Target == "gamma" ? 20 : 0, 100);
+                bool mainChannel = IsMainBrightnessChannel(monitor, action.Target);
+                if (mainChannel) CancelManualTransition(monitor.Id);
                 await _operations.WaitAsync();
                 try
                 {
@@ -216,6 +279,7 @@ internal sealed partial class AppController
                         else await _hardware.SetSdrBrightnessAsync(monitor.Id, value, _lifetime.Token);
                     }
                     _monitors = _monitors.Select(m => m.Id != monitor.Id ? m : action.Target == "gamma" ? m with { GammaBrightness = value } : m with { SdrBrightness = value }).ToArray();
+                    if (mainChannel) RememberManualChannelLevel(_monitors.Single(m => m.Id == monitor.Id));
                 }
                 finally { _operations.Release(); }
             }

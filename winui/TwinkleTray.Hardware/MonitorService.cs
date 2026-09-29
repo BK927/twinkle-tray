@@ -156,16 +156,8 @@ public sealed partial class MonitorService : IDisposable
                 var raw = Array.Empty<NativeMethods.PhysicalMonitor>();
                 try
                 {
-                    if (!options.DisableDdc && NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(logicalMonitor, out var count) && count is > 0 and <= 256)
-                    {
-                        raw = new NativeMethods.PhysicalMonitor[count];
-                        if (!NativeMethods.GetPhysicalMonitorsFromHMONITOR(logicalMonitor, count, raw))
-                        {
-                            errors.Add(NativeFailure($"Physical monitor access is unavailable for {info.DeviceName}").Message);
-                            CloseRawHandles(raw);
-                            raw = [];
-                        }
-                    }
+                    if (!options.DisableDdc)
+                        raw = ReadPhysicalMonitors(logicalMonitor, info.DeviceName, errors, cancellationToken);
                     if (raw.Length == 0)
                     {
                         for (var i = 0; i < devices.Count; i++)
@@ -307,6 +299,58 @@ public sealed partial class MonitorService : IDisposable
                 devices.Add(new DeviceIdentity(id, string.IsNullOrWhiteSpace(device.DeviceString) ? adapter : device.DeviceString.Trim(), adapter));
         }
         return devices;
+    }
+
+    private static NativeMethods.PhysicalMonitor[] ReadPhysicalMonitors(nint logicalMonitor, string deviceName,
+        List<string> errors, CancellationToken cancellationToken)
+    {
+        string? failure = null;
+        // Some drivers initially expose the logical display before its DDC handle.
+        // Retry only this read-only enumeration; monitor writes are never retried here.
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (attempt > 0 && cancellationToken.WaitHandle.WaitOne(150))
+                cancellationToken.ThrowIfCancellationRequested();
+            if (!NativeMethods.GetNumberOfPhysicalMonitorsFromHMONITOR(logicalMonitor, out var count))
+            {
+                failure = NativeFailure($"Physical monitor access is unavailable for {deviceName}").Message;
+                continue;
+            }
+            if (count == 0)
+            {
+                // Internal panels and unsupported outputs legitimately have no DDC handles.
+                failure = null;
+                continue;
+            }
+            if (count > 256)
+            {
+                failure = $"Windows returned an invalid physical monitor count for {deviceName}.";
+                continue;
+            }
+            var candidate = new NativeMethods.PhysicalMonitor[count];
+            bool transferred = false;
+            try
+            {
+                if (NativeMethods.GetPhysicalMonitorsFromHMONITOR(logicalMonitor, count, candidate))
+                {
+                    if (candidate.All(monitor => monitor.Handle != 0 && monitor.Handle != -1))
+                    {
+                        transferred = true;
+                        return candidate;
+                    }
+                    failure = $"Windows returned an incomplete physical monitor handle list for {deviceName}.";
+                }
+                else failure = NativeFailure($"Physical monitor access is unavailable for {deviceName}").Message;
+            }
+            finally
+            {
+                // A failed native call may still have returned some handles.
+                if (!transferred) CloseRawHandles(candidate);
+            }
+        }
+        if (failure is not null) errors.Add(failure);
+        return [];
     }
 
     private static bool ReadLevel(PhysicalMonitorHandle handle, byte code, out double percentage, out uint maximum)

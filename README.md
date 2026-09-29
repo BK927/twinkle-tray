@@ -1,4 +1,4 @@
-> **WinUI 3 fork · 0.2.0** — The `winui3` branch ports Twinkle Tray's user features to native C#/WinUI 3 while retaining the original Electron source. 기능, 실행 방법은 [WinUI 3 안내](winui/README.md), 원본과의 차이점 및 실제 장치 검증 범위는 [이식 체크리스트](winui/PORT-CHECKLIST.md)를 확인하세요. Device-specific validation and documented compatibility differences remain. The original upstream README follows below.
+> **WinUI 3 fork · 0.2.1** — The `winui3` branch ports Twinkle Tray's user features to native C#/WinUI 3 while retaining the original Electron source. 기능, 실행 방법은 [WinUI 3 안내](winui/README.md), 원본과의 차이점 및 실제 장치 검증 범위는 [이식 체크리스트](winui/PORT-CHECKLIST.md)를 확인하세요. Device-specific validation and documented compatibility differences remain. The original upstream README follows below.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/xanderfrangos/twinkle-tray/master/src/assets/logo.png" width="128px" height="128px" alt="Twinkle Tray brightness slider logo">

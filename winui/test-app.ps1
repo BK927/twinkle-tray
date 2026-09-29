@@ -27,10 +27,12 @@ New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
 $ownedProcesses = [Collections.Generic.List[Diagnostics.Process]]::new()
 $passedChecks = [Collections.Generic.List[string]]::new()
 $script:invocationIndex = 0
+$smokeStarted = [DateTime]::MaxValue
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 try { $sid = $identity.User.Value } finally { $identity.Dispose() }
 $sessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
 $demoMutexName = "Local\TwinkleTray.WinUI.$sid.$sessionId.Demo"
+$demoPipeName = "TwinkleTray.WinUI.$sid.$sessionId.Demo"
 $testMutex = [Threading.Mutex]::new($false, "$demoMutexName.IntegrationTests")
 $ownsTestMutex = $false
 
@@ -67,6 +69,30 @@ function Assert-Test {
     if (-not $Condition) { throw $Message }
 }
 
+function Invoke-TestPipeRequest {
+    param([string] $Request)
+    # Address only the isolated demo server started by this script.
+    $pipe = [IO.Pipes.NamedPipeClientStream]::new('.', $demoPipeName, [IO.Pipes.PipeDirection]::InOut, [IO.Pipes.PipeOptions]::Asynchronous)
+    $reader = $null
+    $writer = $null
+    try {
+        $pipe.Connect(5000)
+        $reader = [IO.StreamReader]::new($pipe)
+        $writer = [IO.StreamWriter]::new($pipe)
+        $writer.AutoFlush = $true
+        $writer.WriteLine($Request)
+        $responseTask = $reader.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(5))
+        $response = $responseTask.GetAwaiter().GetResult()
+        Assert-Test (-not [string]::IsNullOrWhiteSpace($response)) 'The demo IPC server returned no response.'
+        return $response | ConvertFrom-Json
+    }
+    finally {
+        if ($null -ne $writer) { $writer.Dispose() }
+        if ($null -ne $reader) { $reader.Dispose() }
+        $pipe.Dispose()
+    }
+}
+
 try {
     try { $ownsTestMutex = $testMutex.WaitOne(0) }
     catch [Threading.AbandonedMutexException] { $ownsTestMutex = $true }
@@ -91,7 +117,13 @@ try {
     Assert-Test (Test-Path -LiteralPath $smokePath -PathType Leaf) 'The application did not write smoke-test.json.'
     Assert-Test ((Get-Item -LiteralPath $smokePath).LastWriteTimeUtc -ge $smokeStarted) 'The smoke-test report is stale.'
     $smoke = Get-Content -Raw -LiteralPath $smokePath | ConvertFrom-Json
-    Assert-Test ($smoke.Passed -and $smoke.NativeWinUI -and $smoke.SettingsWindow -and $smoke.DemoDisplays -eq 2 -and $smoke.SettingsPages -eq 11 -and $smoke.RuntimeChecks.Count -ge 9 -and $smoke.HardwareWrites -eq 0) 'The smoke report must confirm two demo displays, eleven settings pages, runtime checks, and zero hardware writes.'
+    Assert-Test ($smoke.Passed -and $smoke.NativeWinUI -and $smoke.SettingsWindow -and $smoke.DemoDisplays -eq 2 -and $smoke.SettingsPages -eq 11 -and $smoke.RuntimeChecks.Count -ge 41 -and $smoke.HardwareWrites -eq 0) 'The smoke report must confirm two demo displays, eleven settings pages, runtime checks, and zero hardware writes.'
+    $automationPath = Join-Path $applicationDirectory 'automation-regression.json'
+    Assert-Test (Test-Path -LiteralPath $automationPath -PathType Leaf) 'The application did not produce automation regression results.'
+    Assert-Test ((Get-Item -LiteralPath $automationPath).LastWriteTimeUtc -ge $smokeStarted) 'The automation regression report is stale.'
+    $automation = Get-Content -Raw -LiteralPath $automationPath | ConvertFrom-Json
+    Assert-Test ($automation.Passed -and $automation.Failures.Count -eq 0 -and $automation.Observations.Count -ge 20) 'The scheduling, profile, sensor, idle, and manual-control automation regressions did not all pass.'
+    Copy-Item -LiteralPath $automationPath -Destination (Join-Path $runDirectory 'automation-regression.json')
     Copy-Item -LiteralPath $smokePath -Destination (Join-Path $runDirectory 'smoke-test.json')
     $passedChecks.Add('Native startup, two demo displays, eleven settings pages, and runtime controls')
 
@@ -126,6 +158,34 @@ try {
     Assert-Test ($invalid.ExitCode -ne 0 -and ($invalid.Output + $invalid.Error) -match 'Monitor 999.*not found') 'An invalid monitor must return a nonzero exit code and a useful error message.'
     $passedChecks.Add('Invalid monitor produces an error response')
 
+    foreach ($malformedRequest in @('{broken-json', '{}', '["--demo","--not-a-real-option"]')) {
+        $malformedResponse = Invoke-TestPipeRequest -Request $malformedRequest
+        Assert-Test (-not $malformedResponse.Success -and -not [string]::IsNullOrWhiteSpace($malformedResponse.Message)) 'Malformed IPC requests must produce a useful failure response.'
+    }
+    $recoveredResponse = Invoke-TestCommand -Name 'list-after-malformed-ipc' -Arguments @('--demo', '--List')
+    $recovered = @($recoveredResponse.Output | ConvertFrom-Json)
+    Assert-Test ($recovered.Count -eq 2 -and $recovered[0].Brightness -eq 60 -and $recovered[1].Brightness -eq 65) 'The IPC server did not recover without changing brightness after malformed requests.'
+    $passedChecks.Add('IPC survives malformed JSON, wrong request types, and unsupported options')
+
+    $idSet = Invoke-TestCommand -Name 'set-by-monitor-id' -Arguments @('--demo', '--MonitorID=demo:internal', '--Set=42')
+    Assert-Test ($idSet.Output -eq 'OK') 'The stable monitor-ID selector failed.'
+    $idLevelsResponse = Invoke-TestCommand -Name 'list-after-id-set' -Arguments @('--demo', '--List')
+    $idLevels = @($idLevelsResponse.Output | ConvertFrom-Json)
+    Assert-Test ($idLevels[0].Brightness -eq 60 -and $idLevels[1].Brightness -eq 42) 'The monitor-ID selector changed the wrong display.'
+    $passedChecks.Add('IPC stable monitor-ID selection changes only the requested display')
+
+    $null = Invoke-TestCommand -Name 'set-minimum' -Arguments @('--demo', '--All', '--Set=0')
+    $null = Invoke-TestCommand -Name 'offset-below-minimum' -Arguments @('--demo', '--All', '--Offset=-5')
+    $minResponse = Invoke-TestCommand -Name 'list-at-minimum' -Arguments @('--demo', '--List')
+    $minimumLevels = @($minResponse.Output | ConvertFrom-Json)
+    Assert-Test (@($minimumLevels | Where-Object Brightness -ne 0).Count -eq 0) 'IPC brightness offsets did not clamp to the lower limit.'
+    $null = Invoke-TestCommand -Name 'set-maximum' -Arguments @('--demo', '--All', '--Set=100')
+    $null = Invoke-TestCommand -Name 'offset-above-maximum' -Arguments @('--demo', '--All', '--Offset=5')
+    $maxResponse = Invoke-TestCommand -Name 'list-at-maximum' -Arguments @('--demo', '--List')
+    $maximumLevels = @($maxResponse.Output | ConvertFrom-Json)
+    Assert-Test (@($maximumLevels | Where-Object Brightness -ne 100).Count -eq 0) 'IPC brightness offsets did not clamp to the upper limit.'
+    $passedChecks.Add('IPC brightness offsets clamp at both physical limits')
+
     $help = Invoke-TestCommand -Name 'help' -Arguments @('--demo', '--help')
     Assert-Test ($help.ExitCode -eq 0 -and $help.Output.Contains('--MonitorNum') -and $help.Output.Contains('--Set')) 'The help command did not return the expected usage text.'
     $passedChecks.Add('Help returns usage and exit code zero')
@@ -136,11 +196,24 @@ try {
 
     $overlay = Invoke-TestCommand -Name 'overlay' -Arguments @('--demo', '--All', '--Set=50', '--Overlay')
     Assert-Test ($overlay.Output -eq 'OK') 'The dedicated brightness overlay command failed.'
+    $overlayLevelsResponse = Invoke-TestCommand -Name 'list-after-overlay' -Arguments @('--demo', '--List')
+    $overlayLevels = @($overlayLevelsResponse.Output | ConvertFrom-Json)
+    Assert-Test (@($overlayLevels | Where-Object Brightness -ne 50).Count -eq 0) 'The overlay command did not apply its requested brightness.'
     $passedChecks.Add('Dedicated native OSD and brightness update')
+
+    $settingsResponse = Invoke-TestCommand -Name 'settings' -Arguments @('--demo', '--settings')
+    Assert-Test ($settingsResponse.Output -eq 'OK' -and -not $demo.Process.HasExited) 'The settings-window command failed or terminated the demo server.'
+    $passedChecks.Add('IPC opens the native settings window without ending the server')
 
     [ordered]@{
         Passed = $true
         Application = $application
+        ApplicationSha256 = (Get-FileHash -LiteralPath $application -Algorithm SHA256).Hash
+        ManagedAssemblySha256 = [ordered]@{
+            'TwinkleTray.WinUI.dll' = (Get-FileHash -LiteralPath (Join-Path $applicationDirectory 'TwinkleTray.WinUI.dll') -Algorithm SHA256).Hash
+            'TwinkleTray.Core.dll' = (Get-FileHash -LiteralPath (Join-Path $applicationDirectory 'TwinkleTray.Core.dll') -Algorithm SHA256).Hash
+            'TwinkleTray.Hardware.dll' = (Get-FileHash -LiteralPath (Join-Path $applicationDirectory 'TwinkleTray.Hardware.dll') -Algorithm SHA256).Hash
+        }
         CompletedUtc = [DateTime]::UtcNow.ToString('O')
         SimulatedMonitors = 2
         SettingsPages = $smoke.SettingsPages
@@ -151,6 +224,10 @@ try {
     Write-Host "PASS $($passedChecks.Count) integration checks. Results: $runDirectory"
 }
 catch {
+    $automationPath = Join-Path $applicationDirectory 'automation-regression.json'
+    if ((Test-Path -LiteralPath $automationPath -PathType Leaf) -and (Get-Item -LiteralPath $automationPath).LastWriteTimeUtc -ge $smokeStarted) {
+        Copy-Item -LiteralPath $automationPath -Destination (Join-Path $runDirectory 'automation-regression.json')
+    }
     [ordered]@{
         Passed = $false
         Application = $application

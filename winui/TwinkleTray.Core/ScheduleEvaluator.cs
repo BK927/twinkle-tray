@@ -60,7 +60,11 @@ public static class ScheduleEvaluator
         }
         else time = SolarCalculator.GetEvent(date, latitude, longitude, entry.Event, zone);
         if (time is null) return null;
-        try { return time.Value.AddMinutes(Math.Clamp(entry.OffsetMinutes, -1440, 1440)); }
+        try
+        {
+            var shifted = time.Value.AddMinutes(Math.Clamp(entry.OffsetMinutes, -1440, 1440));
+            return (zone ?? TimeZoneInfo.Local).IsInvalidTime(DateTime.SpecifyKind(shifted, DateTimeKind.Unspecified)) ? null : shifted;
+        }
         catch (ArgumentOutOfRangeException) { return null; }
     }
 
@@ -73,7 +77,10 @@ public static class ScheduleEvaluator
         var result = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
         foreach (var id in monitorIds.Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var applicable = occurrences.Select(item => (item.At, Level: GetLevel(item.Entry, id))).Where(item => item.Level.HasValue).ToArray();
+            // The last applicable entry wins at an instant. Use that same target when approaching
+            // the instant so duplicate times (including offset collisions) cannot create a jump.
+            var applicable = occurrences.Select(item => (item.At, Level: GetLevel(item.Entry, id)))
+                .Where(item => item.Level.HasValue).GroupBy(item => item.At).Select(group => group.Last()).ToArray();
             var previous = applicable.LastOrDefault(item => item.At <= now);
             if (!previous.Level.HasValue) continue;
             double level = previous.Level.Value;
@@ -91,7 +98,15 @@ public static class ScheduleEvaluator
     public static double? GetLevel(ScheduleEntry entry, string monitorId)
     {
         if (entry.IndividualBrightness?.Count > 0)
-            return entry.IndividualBrightness.TryGetValue(monitorId, out var value) && value is >= 0 and <= 100 ? value : null;
+        {
+            if (entry.IndividualBrightness.TryGetValue(monitorId, out var value))
+                return value is >= 0 and <= 100 ? value : null;
+            // JSON-created dictionaries use an ordinal comparer; monitor targeting is case-insensitive.
+            foreach (var pair in entry.IndividualBrightness)
+                if (string.Equals(pair.Key, monitorId, StringComparison.OrdinalIgnoreCase))
+                    return pair.Value is >= 0 and <= 100 ? pair.Value : null;
+            return null;
+        }
         return (entry.MonitorId == "all" || string.Equals(entry.MonitorId, monitorId, StringComparison.OrdinalIgnoreCase)) && entry.Brightness is >= 0 and <= 100
             ? entry.Brightness : null;
     }

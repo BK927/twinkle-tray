@@ -91,13 +91,18 @@ internal sealed partial class AppController
     {
         if (!double.IsFinite(value) || value < 0 || value > ushort.MaxValue) throw new ArgumentOutOfRangeException(nameof(value));
         var feature = await QueryFeatureAsync(id, code);
+        var monitor = _monitors.Single(m => m.Id == id);
+        bool mainChannel = code == monitor.BrightnessVcp && IsMainBrightnessChannel(monitor, "brightness");
+        if (mainChannel) CancelManualTransition(id);
+        uint raw = (uint)Math.Round(value);
         await _operations.WaitAsync();
         try
         {
-            if (!IsDemo) await _hardware.SetVcpAsync(id, code, (uint)Math.Round(value), _lifetime.Token);
-            if (_features.TryGetValue(id, out var features)) _features[id] = features.Select(f => f.Code == code ? f with { Current = (uint)Math.Round(value) } : f).ToArray();
+            if (!IsDemo) await _hardware.SetVcpAsync(id, code, raw, _lifetime.Token);
+            if (_features.TryGetValue(id, out var features)) _features[id] = features.Select(f => f.Code == code ? f with { Current = raw } : f).ToArray();
             if (feature.Maximum > 0)
-                _monitors = _monitors.Select(m => m.Id != id ? m : code == m.BrightnessVcp ? m with { Brightness = value * 100 / feature.Maximum } : code == 0x12 ? m with { Contrast = value * 100 / feature.Maximum } : m).ToArray();
+                _monitors = _monitors.Select(m => m.Id != id ? m : code == m.BrightnessVcp ? m with { Brightness = raw * 100d / feature.Maximum } : code == 0x12 ? m with { Contrast = raw * 100d / feature.Maximum } : m).ToArray();
+            if (mainChannel) RememberManualChannelLevel(_monitors.Single(m => m.Id == id));
         }
         finally { _operations.Release(); }
     }
@@ -124,7 +129,7 @@ internal sealed partial class AppController
         string type = Text("type").ToLowerInvariant();
         if (type == "list") return _monitors.ToDictionary(m => m.Id, UdpMonitor);
         if (type == "refresh") { await RefreshAsync(); return new { ok = true }; }
-        if (type == "checktime") { await ApplyLevelsAsync(ScheduleEvaluator.GetCurrentLevels(Settings, DateTime.Now, VisibleMonitors.Select(m => m.Id))); return new { ok = true }; }
+        if (type == "checktime") { await ApplyManualLevelsAsync(ScheduleEvaluator.GetCurrentLevels(Settings, DateTime.Now, VisibleMonitors.Select(m => m.Id))); return new { ok = true }; }
         string selector = Text("monitor");
         if (selector.Equals("all", StringComparison.OrdinalIgnoreCase)) selector = "all";
         var selected = selector.Equals("all", StringComparison.OrdinalIgnoreCase) ? VisibleMonitors.ToArray() : _monitors.Where(m => m.Id.Contains(selector, StringComparison.OrdinalIgnoreCase) || m.Name.Equals(selector, StringComparison.OrdinalIgnoreCase)).ToArray();
