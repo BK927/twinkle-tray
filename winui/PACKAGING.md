@@ -2,15 +2,17 @@
 
 The supported release target is Windows x64. macOS, Apple hardware and Windows ARM64 execution are outside the current support scope; retained ARM64 build tooling is for development and does not establish runtime support.
 
+The current development version is **0.3.6**, covering settings typography and spacing, prepared initial settings display and a frame-driven 300 ms cubic tray entrance. Its local x64 run passed 63 core tests, 56 runtime assertions, 144 layout cases, 68 UI checks and 11 integration groups including IPC, with zero hardware/user-settings writes. [README.md](README.md) records the complete 0.3.6 scope separately from historical 0.3.5 results. Local application tests do not establish signed MSIX installation or package publication.
+
 Run `build.ps1` first, then create a portable ZIP and an unsigned MSIX from the published application:
 
 ```powershell
-./winui/package.ps1 -Architecture x64 -Version 0.3.5
+./winui/package.ps1 -Architecture x64 -Version 0.3.6
 ```
 
 The output is saved in `winui/artifacts/packages/`, with SHA256 checksums for the selected architecture. PDB files and `smoke-test.json` are excluded. `-SkipMsix` produces only the portable ZIP. Packaging does not install an application or certificate.
 
-Release archives use the `TwinkleTray-Native-<version>-x64` prefix, for example `TwinkleTray-Native-0.3.5-x64.zip`. Published packages are listed under [BK927/twinkle-tray-native releases](https://github.com/BK927/twinkle-tray-native/releases); CI results and uploaded artifacts belong to their matching [Actions run](https://github.com/BK927/twinkle-tray-native/actions). The `winui-v<version>` tag format and `SHA256SUMS.txt` are retained for updater compatibility. A local verification report does not establish publication.
+Release archives use the `TwinkleTray-Native-<version>-x64` prefix, for example `TwinkleTray-Native-0.3.6-x64.zip`. Published packages are listed under [BK927/twinkle-tray-native releases](https://github.com/BK927/twinkle-tray-native/releases); CI results and uploaded artifacts belong to their matching [Actions run](https://github.com/BK927/twinkle-tray-native/actions). The `winui-v<version>` tag format and `SHA256SUMS.txt` are retained for updater compatibility. A local verification report does not establish publication.
 
 ## Moving from 0.2.x to the Native releases
 

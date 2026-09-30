@@ -22,7 +22,7 @@ Twinkle Tray Native keeps the familiar tray workflow and monitor controls while 
 
 The [port checklist](winui/PORT-CHECKLIST.md) distinguishes implemented features from actual device tests. The original Electron source is retained in this repository.
 
-## Try 0.3.5
+## Try 0.3.6
 
 Build the current x64 application from source using the steps below. Published packages are listed in the [release channel](https://github.com/BK927/twinkle-tray-native/releases); successful [GitHub Actions runs](https://github.com/BK927/twinkle-tray-native/actions/workflows/winui.yml) may also provide build artifacts. Check the version and result of the selected run. Keep the complete output folder, including DLLs, `Assets` and `Localization`, together and run `TwinkleTray.WinUI.exe`; the executable keeps its existing filename for compatibility.
 
@@ -33,7 +33,9 @@ To try the interface without changing real monitor brightness:
 .\TwinkleTray.WinUI.exe --demo --settings
 ```
 
-The current development version is **0.3.5**. When moving from the earlier 0.2.x “Twinkle Tray · WinUI 3” builds, close the old app and install the new build manually once. Existing settings remain at `%APPDATA%\TwinkleTray.WinUI\settings.json`; there is no need to move or rename them. Automatic updating across the repository rename is not guaranteed for old binaries. [Packaging and upgrades](winui/PACKAGING.md) explains the preserved compatibility identifiers.
+The current development version is **0.3.6**. When moving from the earlier 0.2.x “Twinkle Tray · WinUI 3” builds, close the old app and install the new build manually once. Existing settings remain at `%APPDATA%\TwinkleTray.WinUI\settings.json`; there is no need to move or rename them. Automatic updating across the repository rename is not guaranteed for old binaries. [Packaging and upgrades](winui/PACKAGING.md) explains the preserved compatibility identifiers.
+
+Version **0.3.6** refines settings typography and card spacing, sizes the settings window before activation, and prepares its initial layout behind a themed solid background before revealing it. The tray's 300 ms cubic entrance now follows rendering frames. Local checks passed for the prepared display and animation lifecycle; visual smoothness and the absence of brief black frames still require separate observation. See [UI changes and verification scope](winui/UI-POLISH.md).
 
 Version **0.3.5** reduces repeated work while retaining the 0.3.4 tray appearance. Overlapping monitor refreshes share a scan, with a fresh follow-up for requests received during scanning. Inactive app profiles no longer query the foreground process; value-only UI updates compare layout inputs directly without JSON serialization or an explicit window reposition. [Optimization scope and tests](winui/PERFORMANCE.md) distinguish reduced work from unmeasured end-to-end performance.
 
@@ -59,7 +61,11 @@ The self-contained application is published to `winui/artifacts/win-x64/`. Node.
 
 ## Verification
 
-The **0.3.5 local x64 run is partially verified**: 63 core tests, 56 runtime assertions, 11 settings pages, all 144 layout cases and 63/64 UI checks passed, with 17 previews and zero hardware/user-settings writes. The existing native foreground-transfer assertion failed; IPC was not reached. The final run completed without the Acrylic teardown exception seen in the first attempt. Earlier transition-wait failures, a whole-suite timeout and settings-restoration test starvation prompted focused harness fixes; no failed run is counted as passing. See [optimization evidence and limits](winui/PERFORMANCE.md).
+The **0.3.6 local Windows x64 run passed 63 core tests, 56 runtime assertions, 11 settings pages, 144/144 layout cases, 68/68 UI checks and 11 integration groups including IPC**, with 17 previews, zero harness errors and zero hardware/user-settings writes. It completed at **2026-09-30 09:09:26.280215 UTC**. A real click on the interactive test-start button preceded the suite; the existing foreground-transfer assertion passed unchanged. New checks passed for initial settings display, native cloaking, bounds, reuse and cancellation.
+
+The entrance recorded **43 rendering callbacks over 304.18 ms**, with a **13.82 ms maximum callback gap**, no watchdog completion and a cleared rendering subscription. Callback timing and geometry do not establish perceptual smoothness or prove the absence of black frames. No high-speed first-open capture, native DPI/high-contrast sessions or Windows theme-switch matrix was performed. The run and evidence are detailed in [UI verification](winui/UI-POLISH.md); earlier version records remain separate below.
+
+The **historical 0.3.5 local x64 run is partially verified**: 63 core tests, 56 runtime assertions, 11 settings pages, all 144 layout cases and 63/64 UI checks passed, with 17 previews and zero hardware/user-settings writes. The existing native foreground-transfer assertion failed; IPC was not reached. The final run completed without the Acrylic teardown exception seen in the first attempt. Earlier transition-wait failures, a whole-suite timeout and settings-restoration test starvation prompted focused harness fixes; no failed run is counted as passing. See [optimization evidence and limits](winui/PERFORMANCE.md).
 
 The **0.3.4 local x64 run remains partially verified**: 54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases and 63/64 UI checks passed, with 17 previews. The new rendered-color and material checks passed: the System background pixel matched the Windows accent exactly, and explicit Light/Dark produced neutral surfaces. A native demo capture confirmed the colored background and inline values. The existing foreground-transfer check still failed; IPC was not reached. No Windows personalization settings or real monitor levels were changed. See [appearance evidence and limits](winui/UI-POLISH.md).
 
@@ -71,7 +77,7 @@ The original panel was compared against its source; an installed upstream panel 
 
 ## 한국어
 
-**Twinkle Tray Native**는 원본 Twinkle Tray의 트레이 사용 방식과 모니터 설정을 유지하면서 C#과 WinUI 3로 옮긴 Windows x64용 커뮤니티 포크입니다. 현재 개발 버전은 **0.3.5**입니다. 위 방법으로 x64 앱을 빌드하거나 릴리스 페이지의 게시된 패키지 및 성공한 Actions 실행의 산출물을 확인하세요. macOS·Apple 하드웨어·ARM64 실행은 현재 지원 범위에 포함하지 않습니다.
+**Twinkle Tray Native**는 원본 Twinkle Tray의 트레이 사용 방식과 모니터 설정을 유지하면서 C#과 WinUI 3로 옮긴 Windows x64용 커뮤니티 포크입니다. 현재 개발 버전은 **0.3.6**입니다. 설정 화면의 글자·간격과 초기 표시 준비 과정을 다듬고, 트레이의 300ms cubic 등장 애니메이션을 렌더링 프레임에 맞췄습니다. 0.3.6의 로컬 자동 검사는 모두 통과했으며, 체감 움직임과 순간적인 검은 화면의 부재까지 검증한 결과는 아닙니다. 위 방법으로 x64 앱을 빌드하거나 릴리스 페이지의 게시된 패키지 및 성공한 Actions 실행의 산출물을 확인하세요. macOS·Apple 하드웨어·ARM64 실행은 현재 지원 범위에 포함하지 않습니다.
 
 0.2.x에서 처음 전환할 때는 기존 앱을 종료하고 새 빌드를 수동으로 설치하세요. 기존 설정 경로와 파일 형식은 유지합니다. 사용법과 검증 범위는 [한국어 안내](winui/README.md)에 정리했습니다.
 

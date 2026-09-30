@@ -75,9 +75,11 @@ public sealed partial class SettingsWindow
             SolidBackground.Visibility = Visibility.Visible;
             return;
         }
-        SolidBackground.Visibility = Visibility.Collapsed;
         if (acrylic) { if (SystemBackdrop is not DesktopAcrylicBackdrop) SystemBackdrop = new DesktopAcrylicBackdrop(); }
         else if (SystemBackdrop is not MicaBackdrop) SystemBackdrop = new MicaBackdrop();
+        // Keep a themed opaque first frame while the backdrop target and XAML
+        // content connect. Reveal the material only after initial presentation.
+        SolidBackground.Visibility = _settingsSurfaceReady ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void UpdateNavigationLayout(double width)
@@ -91,7 +93,7 @@ public sealed partial class SettingsWindow
             Navigation.IsPaneOpen = !compact;
         }
         Navigation.IsPaneToggleButtonVisible = compact;
-        PageContent.Margin = new Thickness(compact ? 16 : 24, 16, compact ? 16 : 24, 24);
+        PageContent.Margin = new Thickness(compact ? 16 : 32, compact ? 16 : 24, compact ? 16 : 32, 32);
     }
 
     private void EnsureMinimumWindowSize()
@@ -128,6 +130,9 @@ public sealed partial class SettingsWindow
         {
             if (width <= 0) return;
             var stacked = width < 600;
+            // The second row exists only for narrow layouts. An unconditional
+            // gap adds empty space beneath every otherwise horizontal card.
+            grid.RowSpacing = stacked ? 8 : 0;
             Grid.SetColumn(control, stacked ? 0 : 1);
             Grid.SetRow(control, stacked ? 1 : 0);
             Grid.SetColumnSpan(text, stacked ? 2 : 1);
@@ -157,6 +162,7 @@ public sealed partial class SettingsWindow
         void Arrange(double width)
         {
             var stacked = width < 600;
+            grid.RowSpacing = stacked ? 12 : 0;
             for (var i = 0; i < fields.Length; i++)
             {
                 Grid.SetColumn(fields[i], stacked ? 0 : i);
@@ -171,15 +177,15 @@ public sealed partial class SettingsWindow
 
     private void Section(string title)
     {
-        var heading = Label(title, 16);
-        heading.Margin = new Thickness(0, 16, 0, 4);
+        var heading = new TextBlock { Text = title, Style = SharedStyle("SettingsSectionTextStyle"), Margin = new Thickness(0, 16, 0, 0) };
         PageContent.Children.Add(heading);
     }
 
     private Expander ExpandableCard(string key, Func<string> title, Func<string>? summary, UIElement content, bool initiallyExpanded = false)
     {
         var header = new StackPanel { Spacing = 4, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var name = Label(title(), 16);
+        var name = Label(title());
+        name.FontWeight = Microsoft.UI.Text.FontWeights.SemiBold;
         header.Children.Add(name);
         var detail = Description(summary?.Invoke() ?? "");
         if (summary is not null) header.Children.Add(detail);

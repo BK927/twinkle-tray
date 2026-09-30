@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using TwinkleTray.Core;
 using TwinkleTray.Hardware;
@@ -60,8 +61,9 @@ public sealed partial class SettingsWindow
         try
         {
             UiVisualVerification.RecordProgress(previewDirectory, "Loading isolated settings window", result);
-            window.Activate();
-            await UiVisualVerification.WaitLoadedAsync(window.Root);
+            await window.VerifyInitialPresentationAsync(result);
+            window._settings.UseAcrylic = false;
+            window.ApplyTheme();
             foreach (var monitor in window._monitors)
                 window._features[monitor.Id] = await window._actions.QueryFeaturesAsync!(monitor.Id);
             foreach (var locale in new[] { "ko", "en" })
@@ -105,6 +107,48 @@ public sealed partial class SettingsWindow
         finally { window.Close(); LocalizationService.Configure(language); }
         return result;
     }
+
+    private async Task VerifyInitialPresentationAsync(UiVerificationResult result)
+    {
+        _settings.UseAcrylic = true;
+        ApplyTheme();
+        nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        var beforeShow = SettingsWindowBounds();
+        bool hiddenBeforeShow = !SettingsTestIsWindowVisible(hwnd);
+        ShowPrepared();
+        int initialResult = SettingsTestDwmGetWindowAttribute(hwnd, 14, out int initialCloak, sizeof(int));
+        await WaitForInitialPresentationForVerificationAsync();
+        await UiVisualVerification.WaitLoadedAsync(Root);
+        int revealedResult = SettingsTestDwmGetWindowAttribute(hwnd, 14, out int revealedCloak, sizeof(int));
+        result.Checks.Add(new("Settings first show retains its prepared bounds through cloaked layout and native reveal",
+            hiddenBeforeShow && InitialPresentationCloaked && initialResult >= 0 && initialCloak != 0 &&
+            InitialPresentationLayoutReady && InitialPresentationHadSolidBackground && InitialPresentationRevealed &&
+            revealedResult >= 0 && revealedCloak == 0 && SettingsTestIsWindowVisible(hwnd) &&
+            beforeShow.Equals(InitialPresentationBounds) && beforeShow.Equals(InitialRevealBounds),
+            $"Initially hidden={hiddenBeforeShow}; cloak before/after={initialCloak}/{revealedCloak}; layout ready={InitialPresentationLayoutReady}; themed underlay={InitialPresentationHadSolidBackground}; before={beforeShow}; reveal={InitialRevealBounds}. Native visibility, DWM cloak and geometry; not a black-pixel capture."));
+
+        // Reusing an existing settings window must retain a user's chosen size.
+        AppWindow.Resize(new SizeInt32(beforeShow.Width + 24, beforeShow.Height + 24));
+        await UiVisualVerification.SettleAsync(Root);
+        var resized = SettingsWindowBounds();
+        ShowPrepared();
+        await WaitForInitialPresentationForVerificationAsync();
+        result.Checks.Add(new("Reopening settings preserves the existing window bounds", resized.Equals(SettingsWindowBounds()),
+            $"Requested again at {resized}; observed={SettingsWindowBounds()}. Same window instance."));
+
+        var cancelled = new SettingsWindow(new AppSettings { Language = "ko", UseAcrylic = true }, [], () => { }, () => { });
+        cancelled.ShowPrepared();
+        cancelled.Close();
+        await cancelled.WaitForInitialPresentationForVerificationAsync();
+        result.Checks.Add(new("Closing settings during preparation cancels its pending reveal",
+            cancelled.InitialPresentationCancelled && !cancelled.InitialPresentationRevealed,
+            $"Cancelled={cancelled.InitialPresentationCancelled}; revealed after close={cancelled.InitialPresentationRevealed}. Immediate close before the first asynchronous frame."));
+    }
+
+    [DllImport("user32.dll", EntryPoint = "IsWindowVisible")]
+    private static extern bool SettingsTestIsWindowVisible(nint hwnd);
+    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")]
+    private static extern int SettingsTestDwmGetWindowAttribute(nint hwnd, int attribute, out int value, int size);
 
     private async Task SetUiViewportAsync(int width, int height)
     {

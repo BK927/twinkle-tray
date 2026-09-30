@@ -86,6 +86,7 @@ internal sealed partial class AppController
                 Settings.Monitors["demo:external"] = new MonitorSettings { ShowContrast = true };
                 runtimeChecks = await VerifyRuntimeForSmokeTestAsync();
                 OpenSettings();
+                await _settingsWindow!.WaitForInitialPresentationForVerificationAsync();
                 settingsPages = _settingsWindow!.VerifyPagesForSmokeTest();
                 uiLayoutCases = await VerifyUiForSmokeTestAsync();
                 await Task.Delay(2000);
@@ -242,7 +243,7 @@ internal sealed partial class AppController
             _settingsWindow = new SettingsWindow(Settings, _monitors, SaveSettings, () => _ = RefreshAsync(), CreateSettingsActions());
             _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         }
-        _settingsWindow.Activate();
+        _settingsWindow.ShowPrepared();
     }
 
     private void RegisterHotkeys()

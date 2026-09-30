@@ -56,7 +56,7 @@
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
             <ScrollViewer x:Name="PageScrollViewer" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                <StackPanel x:Name="PageContent" Margin="24,16,24,24" Spacing="8" MaxWidth="940"
+                <StackPanel x:Name="PageContent" Margin="32,24,32,32" Spacing="8" MaxWidth="940"
                             HorizontalAlignment="Stretch" />
             </ScrollViewer>
         </NavigationView>

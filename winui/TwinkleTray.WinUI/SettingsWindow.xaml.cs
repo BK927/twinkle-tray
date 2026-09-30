@@ -31,11 +31,12 @@ public sealed partial class SettingsWindow : Window
         _actions = actions ?? new SettingsActions();
         InitializeComponent();
         InitializeSettingsLayout();
+        InitializeSettingsPresentation();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBar);
+        SetInitialSizeAndPosition();
         Root.Loaded += (_, _) =>
         {
-            SetInitialSizeAndPosition();
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
             {
                 if (_closing) return;
@@ -93,7 +94,7 @@ public sealed partial class SettingsWindow : Window
             area.Y + (area.Height - height) / 2,
             width,
             height));
-        UpdateNavigationLayout(Root.ActualWidth);
+        UpdateNavigationLayout(width / scale);
     }
 
     internal int VerifyPagesForSmokeTest()
@@ -209,12 +210,14 @@ public sealed partial class SettingsWindow : Window
 
     private void Heading(string title, string? description = null)
     {
-        PageContent.Children.Add(new TextBlock
+        var heading = new StackPanel { Spacing = 8, Margin = new Thickness(0, 0, 0, 8) };
+        heading.Children.Add(new TextBlock
         {
             Text = title, Style = SharedStyle("PageHeadingTextStyle")
         });
         if (!string.IsNullOrEmpty(description))
-            PageContent.Children.Add(Description(description, new Thickness(0, 0, 0, 8)));
+            heading.Children.Add(Description(description));
+        PageContent.Children.Add(heading);
     }
 
     private void RenderGeneral()
@@ -257,7 +260,7 @@ public sealed partial class SettingsWindow : Window
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var identity = new StackPanel { Spacing = 4 };
-            identity.Children.Add(Label(DisplayName(monitor), 18));
+            identity.Children.Add(new TextBlock { Text = DisplayName(monitor), Style = SharedStyle("SettingsSectionTextStyle") });
             var capability = monitor.SupportsBrightness ? T("NATIVE_SUPPORTS_BRIGHTNESS", "Brightness control available") : T("NATIVE_NO_BRIGHTNESS", "Brightness control unavailable");
             identity.Children.Add(Description($"{monitor.Connection} · {capability}"));
             top.Children.Add(identity);
@@ -512,6 +515,7 @@ public sealed partial class SettingsWindow : Window
             result = Card(ResponsiveRow(text, control));
         }
         else result = Card(text);
+        result.MinHeight = 64;
         return result;
     }
 
@@ -536,7 +540,7 @@ public sealed partial class SettingsWindow : Window
 
     private static TextBlock Description(string text, Thickness? margin = null) => new()
     {
-        Text = text, Style = SharedStyle("SecondaryTextStyle"),
+        Text = text, Style = SharedStyle("SettingsDescriptionTextStyle"),
         Margin = margin ?? new Thickness(0)
     };
 

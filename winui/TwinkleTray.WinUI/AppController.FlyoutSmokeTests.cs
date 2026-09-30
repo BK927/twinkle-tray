@@ -105,6 +105,10 @@ internal sealed partial class AppController
             int regionAfter = FlyoutTestGetWindowRgnBox(appearanceHwnd, out _);
             result.Checks.Add(new("The whole native banner slides from the right and releases its temporary clip", _window.LastEntranceAnimated == expectedAnimation && !_window.EntranceRunning && (!expectedAnimation || slideObserved) && allMotionClipped && !_window.BannerClipActive && regionAfter == 0,
                 $"System animations={systemUi.AnimationsEnabled}; animated={_window.LastEntranceAnimated}; native slide observed={slideObserved}; monotonic={movesLeft}; native region stayed inside work area={allMotionClipped}; clip active={_window.BannerClipActive}; final region result={regionAfter}. Actual HWND positions include the backdrop; Windows preferences were not changed."));
+            bool renderCallbacksObserved = expectedAnimation ? _window.LastEntranceFrameCount >= 2 : _window.LastEntranceFrameCount == 0;
+            result.Checks.Add(new("The banner advances on rendering callbacks and releases its frame subscription", renderCallbacksObserved &&
+                !_window.EntranceRenderingSubscribed && !_window.EntranceRunning && !_window.LastEntranceUsedWatchdog,
+                $"Animation expected={expectedAnimation}; rendering callbacks={_window.LastEntranceFrameCount}; maximum callback gap including startup={_window.LastEntranceMaxFrameGapMilliseconds:0.##}ms; elapsed={_window.LastEntranceElapsedMilliseconds:0.##}ms; watchdog completed={_window.LastEntranceUsedWatchdog}; still subscribed={_window.EntranceRenderingSubscribed}. Callback cadence is observed without an FPS threshold; this does not establish displayed-frame smoothness."));
             var presenter = (OverlappedPresenter)_window.AppWindow.Presenter;
             long nativeStyle = FlyoutTestGetWindowLongPtr(appearanceHwnd, -16).ToInt64();
             bool hasPopupStyle = !presenter.HasBorder && !presenter.HasTitleBar && (nativeStyle & 0x80000000L) != 0 && (nativeStyle & 0x00CF0000L) == 0;
@@ -131,14 +135,16 @@ internal sealed partial class AppController
             Settings.Theme = "light"; Settings.UseAcrylic = false; _window.RefreshAppearanceForVerification();
             _window.HidePanel(); _window.ShowPanel(keyboard); _window.HidePanel();
             await _window.WaitForPresentationForVerificationAsync();
-            result.Checks.Add(new("Dismissing during preparation cannot reveal a stale flyout", !_window.IsShown && !_window.EntranceRunning,
+            result.Checks.Add(new("Dismissing during preparation cannot reveal a stale flyout", !_window.IsShown && !_window.EntranceRunning && !_window.EntranceRenderingSubscribed,
                 "Show then immediate Hide uses the real asynchronous presentation path; cancelled request must remain hidden."));
             _window.ShowPanel(keyboard);
             await _window.WaitForPreparationForVerificationAsync();
             _window.HidePanel();
-            await Task.Delay(350);
-            result.Checks.Add(new("Dismissing a moving banner cancels motion and removes its clipping region", !_window.IsShown && !_window.EntranceRunning && !_window.BannerClipActive && FlyoutTestGetWindowRgnBox(appearanceHwnd, out _) == 0,
-                "Hide during the real entrance, then wait beyond its duration; no stale timer may reveal or move the banner."));
+            int callbacksAtDismissal = _window.LastEntranceFrameCount;
+            await Task.Delay(450);
+            result.Checks.Add(new("Dismissing a moving banner cancels motion and removes its clipping region", !_window.IsShown && !_window.EntranceRunning &&
+                !_window.EntranceRenderingSubscribed && _window.LastEntranceFrameCount == callbacksAtDismissal && !_window.BannerClipActive && FlyoutTestGetWindowRgnBox(appearanceHwnd, out _) == 0,
+                "Hide during the real entrance, then wait beyond both its duration and watchdog; no rendering callback may continue or stale completion reveal the banner."));
             _window.ShowPanel(keyboard);
             await _window.WaitForPresentationForVerificationAsync();
 

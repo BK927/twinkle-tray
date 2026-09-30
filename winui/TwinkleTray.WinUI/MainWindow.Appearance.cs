@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using TwinkleTray.WinUI.Services;
 using Windows.Graphics;
 using Windows.UI.ViewManagement;
@@ -14,8 +15,11 @@ public sealed partial class MainWindow
     private bool _appearanceSubscribed, _preparingPresentation, _presentationHadActivation;
     private uint _presentationRequest;
     private Task _presentationTask = Task.CompletedTask;
-    private readonly DispatcherTimer _entranceTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private const double EntranceDurationMilliseconds = 300;
+    private readonly DispatcherTimer _entranceWatchdog = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly Stopwatch _entranceClock = new();
+    private double _lastEntranceFrameMilliseconds;
+    private int? _entrancePoseX, _entranceClipWidth;
     private RectInt32 _entranceWorkArea;
     private uint _entranceRequest;
     private WindowSubclass? _animationSubclass;
@@ -26,6 +30,11 @@ public sealed partial class MainWindow
     internal RectInt32 RevealedBounds { get; private set; }
     internal RectInt32 RestingBounds { get; private set; }
     internal bool BannerClipActive { get; private set; }
+    internal bool EntranceRenderingSubscribed { get; private set; }
+    internal int LastEntranceFrameCount { get; private set; }
+    internal double LastEntranceMaxFrameGapMilliseconds { get; private set; }
+    internal double LastEntranceElapsedMilliseconds { get; private set; }
+    internal bool LastEntranceUsedWatchdog { get; private set; }
     private TrayPersonalization _personalization;
     private bool _appearanceQueued;
     internal bool UsesAccentSurface { get; private set; }
@@ -41,7 +50,7 @@ public sealed partial class MainWindow
         MoveBannerWindow(_hwnd, 0, 0, 0, 0, 0, 0x37); // FRAMECHANGED, no move/resize/activation/z-order.
         _animationSubclass = AnimationWindowProcedure;
         if (!SetWindowSubclass(_hwnd, _animationSubclass, 1, 0)) _animationSubclass = null;
-        _entranceTimer.Tick += (_, _) => AdvancePanelEntrance();
+        _entranceWatchdog.Tick += (_, _) => AdvancePanelEntrance(watchdog: true);
         // One whole-surface slide owns the motion; do not combine it with DWM's
         // generic document-window transition or a second content fade.
         int disabled = 1;
@@ -49,7 +58,7 @@ public sealed partial class MainWindow
         Closed += (_, _) =>
         {
             ++_presentationRequest;
-            _entranceTimer.Stop();
+            ResetPanelEntrance();
             if (_animationSubclass is not null) RemoveWindowSubclass(_hwnd, _animationSubclass, 1);
             if (!_appearanceSubscribed) return;
             try { _systemUi.ColorValuesChanged -= SystemColorsChanged; }
@@ -144,6 +153,7 @@ public sealed partial class MainWindow
                 return;
             }
             StartPanelEntrance(request);
+            if (request != _presentationRequest || !IsShown || _closing) return;
             RevealedBounds = CurrentPanelBounds();
             SetPanelCloaked(false);
             _preparingPresentation = false;
@@ -154,6 +164,7 @@ public sealed partial class MainWindow
         {
             Program.Log(exception);
             if (request != _presentationRequest || !IsShown || _closing) return;
+            if (EntranceRunning && !MoveBannerWindow(_hwnd, 0, RestingBounds.X, RestingBounds.Y, 0, 0, 0x215)) { HidePanel(); return; }
             ResetPanelEntrance();
             SetPanelCloaked(false);
             _preparingPresentation = false;
@@ -167,6 +178,11 @@ public sealed partial class MainWindow
     private void StartPanelEntrance(uint request)
     {
         ResetPanelEntrance();
+        LastEntranceFrameCount = 0;
+        LastEntranceMaxFrameGapMilliseconds = 0;
+        LastEntranceElapsedMilliseconds = 0;
+        LastEntranceUsedWatchdog = false;
+        _lastEntranceFrameMilliseconds = 0;
         RestingBounds = CurrentPanelBounds();
         LastEntranceAnimated = _systemUi.AnimationsEnabled && !_accessibility.HighContrast && _animationSubclass is not null;
         if (!LastEntranceAnimated) return;
@@ -176,16 +192,34 @@ public sealed partial class MainWindow
         SetBannerPose(0);
         if (!EntranceRunning) return;
         _entranceClock.Restart();
-        _entranceTimer.Start();
+        // Rendering provides the XAML frame cadence instead of an independent
+        // 16ms timer. This still moves an HWND on the UI thread, so it is not an
+        // independent compositor animation. Subscribe only for this short slide.
+        // https://learn.microsoft.com/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.media.compositiontarget.rendering
+        CompositionTarget.Rendering += EntranceRendering;
+        EntranceRenderingSubscribed = true;
+        // An occluded/suspended rendering target must not strand the panel offscreen.
+        _entranceWatchdog.Start();
     }
 
-    private void AdvancePanelEntrance()
+    private void EntranceRendering(object? sender, object args)
+    {
+        if (!EntranceRunning) return;
+        double elapsed = _entranceClock.Elapsed.TotalMilliseconds;
+        LastEntranceFrameCount++;
+        LastEntranceMaxFrameGapMilliseconds = Math.Max(LastEntranceMaxFrameGapMilliseconds, elapsed - _lastEntranceFrameMilliseconds);
+        _lastEntranceFrameMilliseconds = elapsed;
+        AdvancePanelEntrance();
+    }
+
+    private void AdvancePanelEntrance(bool watchdog = false)
     {
         if (!EntranceRunning || _closing || !IsShown || _entranceRequest != _presentationRequest) { ResetPanelEntrance(); return; }
-        double progress = Math.Clamp(_entranceClock.Elapsed.TotalMilliseconds / 300, 0, 1);
-        if (progress < 1) { SetBannerPose(progress); return; }
+        double progress = Math.Clamp(_entranceClock.Elapsed.TotalMilliseconds / EntranceDurationMilliseconds, 0, 1);
+        if (progress < 1) { if (!watchdog) SetBannerPose(progress); return; }
+        LastEntranceUsedWatchdog = watchdog;
         // Restore the target monitor before accepting DPI changes again.
-        MoveBannerWindow(_hwnd, 0, RestingBounds.X, RestingBounds.Y, 0, 0, 0x215);
+        if (!MoveBannerWindow(_hwnd, 0, RestingBounds.X, RestingBounds.Y, 0, 0, 0x215)) { HidePanel(); return; }
         ResetPanelEntrance();
         PositionPanel();
         QueuePendingPanelFocus();
@@ -193,31 +227,64 @@ public sealed partial class MainWindow
 
     private void SetBannerPose(double progress)
     {
-        double remaining = Math.Pow(1 - progress, 5);
+        // Cubic easing distributes travel more evenly than the previous quintic
+        // curve, which completed 97% of the distance in the first half of the time.
+        double remaining = Math.Pow(1 - progress, 3);
         int offset = (int)Math.Round((_entranceWorkArea.X + _entranceWorkArea.Width - RestingBounds.X + 1) * remaining);
         int x = RestingBounds.X + offset;
+        if (_entrancePoseX == x) return;
         // Clip the whole native surface, including Acrylic, at the chosen work
         // area's edge. It must not appear on an adjacent monitor while sliding.
         int visibleWidth = Math.Clamp(_entranceWorkArea.X + _entranceWorkArea.Width - x, 0, RestingBounds.Width);
-        nint region = CreateRectRgn(0, 0, visibleWidth, RestingBounds.Height);
-        if (region == 0 || SetWindowRgn(_hwnd, region, true) == 0)
+        bool firstPose = !BannerClipActive;
+        // With a monotonically left-moving window, move the old (smaller) clip
+        // first, then expand it. Expanding at the old X can briefly expose pixels
+        // on the neighboring screen. The first pose is clipped before moving.
+        if (!firstPose && !MoveBannerWindow(_hwnd, 0, x, RestingBounds.Y, 0, 0, 0x215))
         {
-            if (region != 0) DeleteObject(region);
-            // A failed clip must never expose a banner on the next screen.
-            MoveBannerWindow(_hwnd, 0, RestingBounds.X, RestingBounds.Y, 0, 0, 0x215);
-            ResetPanelEntrance();
-            QueuePendingPanelFocus();
+            FinishEntranceAfterPositionFailure();
             return;
         }
-        BannerClipActive = true; // The system owns the successfully assigned region.
-        MoveBannerWindow(_hwnd, 0, x, RestingBounds.Y, 0, 0, 0x215);
+        if (_entranceClipWidth != visibleWidth)
+        {
+            nint region = CreateRectRgn(0, 0, visibleWidth, RestingBounds.Height);
+            if (region == 0 || SetWindowRgn(_hwnd, region, true) == 0)
+            {
+                if (region != 0) DeleteObject(region);
+                FinishEntranceAfterPositionFailure();
+                return;
+            }
+            BannerClipActive = true; // The system owns the successfully assigned region.
+            _entranceClipWidth = visibleWidth;
+        }
+        if (firstPose && !MoveBannerWindow(_hwnd, 0, x, RestingBounds.Y, 0, 0, 0x215))
+        {
+            FinishEntranceAfterPositionFailure();
+            return;
+        }
+        _entrancePoseX = x;
+    }
+
+    private void FinishEntranceAfterPositionFailure()
+    {
+        // A failed move/clip must not expose a banner on the neighboring screen.
+        if (!MoveBannerWindow(_hwnd, 0, RestingBounds.X, RestingBounds.Y, 0, 0, 0x215)) { HidePanel(); return; }
+        ResetPanelEntrance();
+        QueuePendingPanelFocus();
     }
 
     private void ResetPanelEntrance()
     {
         EntranceRunning = false;
-        _entranceTimer.Stop();
+        _entranceWatchdog.Stop();
+        if (EntranceRenderingSubscribed)
+        {
+            CompositionTarget.Rendering -= EntranceRendering;
+            EntranceRenderingSubscribed = false;
+        }
+        if (_entranceClock.IsRunning) LastEntranceElapsedMilliseconds = _entranceClock.Elapsed.TotalMilliseconds;
         _entranceClock.Stop();
+        _entrancePoseX = _entranceClipWidth = null;
         if (BannerClipActive && !_closing) SetWindowRgn(_hwnd, 0, true);
         BannerClipActive = false;
     }

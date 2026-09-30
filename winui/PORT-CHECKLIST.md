@@ -1,6 +1,12 @@
-# Twinkle Tray Native 0.3.5: source audit and validation checklist
+# Twinkle Tray Native 0.3.6: source audit and validation checklist
+
+0.3.6 refines settings typography and spacing, prepares the initial settings bounds/layout with a themed solid background before reveal, and drives the 300 ms cubic tray entrance from rendering frames. The local x64 run passed the initial-display, native-cloaking, bounds, reuse and cancellation checks. Callback timing and geometry do not establish perceptual smoothness or prove the absence of a brief black frame. See [UI-POLISH.md](UI-POLISH.md).
+
+The **0.3.6 local run passed 63 core tests, 56 runtime assertions, 11 settings pages, 144/144 layout cases, 68/68 UI checks and 11 integration groups including IPC**, with 17 preview PNGs, zero harness errors and zero hardware/user-settings writes. It completed at **2026-09-30 09:09:26.280215 UTC**; reports are in `artifacts/test-results/20260930T090545795-3f303e96ea3e406696cb9efb29b9196b/`. A real click on the interactive test-start button preceded the suite; the existing foreground-transfer assertion passed unchanged. Animation recorded 43 rendering callbacks over 304.18 ms, a maximum callback gap of 13.82 ms, no watchdog completion and a cleared rendering subscription. High-speed first-open capture, native DPI/high-contrast sessions and an OS theme-switch matrix remain untested. Earlier versions below retain their own results and limitations.
 
 0.3.5 reduces repeated monitor scans, inactive automation work and value-only UI layout work while retaining the 0.3.4 appearance. See [PERFORMANCE.md](PERFORMANCE.md) for scope, regression coverage and measurement limits. The version-specific results below remain historical evidence.
+
+The historical 0.3.5 local x64 run passed 63 core tests, 56 runtime assertions, 11 settings pages, 144 layout cases and 63/64 UI checks, with 17 previews and zero hardware/user-settings writes. Native foreground transfer failed, so IPC was not reached. The final run did not repeat the first attempt's Acrylic teardown exception; earlier failed or timed-out attempts are retained separately in [PERFORMANCE.md](PERFORMANCE.md).
 
 0.3.4 restores the upstream Shell accent background and refines inline values, spacing and alignment. The current System surface rendered the exact Windows accent color; explicit Light/Dark overrides and Acrylic selection passed. Local results: 54 core tests, 144 layout cases, 63/64 UI checks and 17 previews. Native foreground transfer remains a failed check and IPC was not reached. See [UI-POLISH.md](UI-POLISH.md) for the complete scope and native capture method.
 
@@ -12,7 +18,7 @@ Twinkle Tray Native is maintained at [BK927/twinkle-tray-native](https://github.
 
 **한국어:** 원본의 사용자 기능을 기준으로 이식 범위와 검증 범위를 구분했습니다. `Implemented`는 코드가 있다는 뜻이며 실제 장치 검증을 뜻하지 않습니다. 아래 차이점과 미검증 항목이 남아 있으므로 픽셀 단위 동일성이나 모든 하드웨어에서의 완전한 동작을 보장하는 표가 아닙니다.
 
-**Verification scope:** The local **0.3.2 Windows x64 run passed 54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases, 59 UI checks and 11 IPC groups**. Input simulation and real native-event coverage are distinguished below. Previous UI runs and 0.2.1 physical-device results are preserved as historical evidence. Local records are separate from commit-specific [Actions results](https://github.com/BK927/twinkle-tray-native/actions) and [published releases](https://github.com/BK927/twinkle-tray-native/releases).
+**Historical 0.3.2 verification scope:** The local **0.3.2 Windows x64 run passed 54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases, 59 UI checks and 11 IPC groups**. Input simulation and real native-event coverage are distinguished below. Previous UI runs and 0.2.1 physical-device results are preserved as historical evidence. Local records are separate from commit-specific [Actions results](https://github.com/BK927/twinkle-tray-native/actions) and [published releases](https://github.com/BK927/twinkle-tray-native/releases).
 
 ## 0.3.2 appearance and motion
 

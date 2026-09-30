@@ -1,5 +1,19 @@
 # Twinkle Tray Native: UI layout and verification
 
+## 0.3.6 settings presentation and tray motion
+
+Settings use regular 14 DIP labels and descriptions, 16 DIP section headings, and 28 DIP page titles. Ordinary cards have a 64 DIP minimum height and 16-by-12 DIP padding. Horizontal setting rows and field groups no longer retain the spacing of their unused second rows; narrow layouts still stack and wrap. Page titles and descriptions share one heading group so their spacing does not compound.
+
+The settings HWND receives its initial size and position before activation. First display is cloaked while XAML layout settles, then reveals with an opaque theme-colored underlay. Two rendering callbacks allow the renderer to advance before exposing Mica/Acrylic. Timeouts retain the solid theme background; closing cancels pending preparation. Reopening an existing window preserves its size. These readiness checks do not establish the absence of every native black frame on every GPU.
+
+The tray keeps its bottom-right, whole-window 300 ms entrance, but movement now follows `CompositionTarget.Rendering` instead of an independent 16 ms dispatcher timer. Cubic easing distributes the travel more evenly than the previous quintic curve. Duplicate rounded positions and unchanged clips are skipped; clipping expands after moving left so an intermediate native update cannot expose the surface on the adjacent display. Rendering subscriptions end on completion, hiding or closure. A 400 ms watchdog settles an occluded renderer. This remains an HWND animation on the UI thread, not an independent compositor animation.
+
+The local x64 run completed at **2026-09-30 09:09:26 UTC** with **63 core tests, 56 runtime assertions, 11 settings pages, 144/144 layout cases, 68/68 UI checks and 11 integration checks passing**. It generated 17 previews with zero UI harness errors and zero hardware/user-settings writes. Evidence is in `artifacts/test-results/20260930T090545795-3f303e96ea3e406696cb9efb29b9196b/`.
+
+New regression checks observed the settings HWND hidden before first show, DWM cloak transitioning from 1 to 0, ready layout, a themed underlay and unchanged native bounds through reveal. Reopening retained a changed size, and immediate close cancelled the pending reveal. The tray sample received **43 rendering callbacks over 304.18 ms**, with a **13.82 ms maximum callback gap**, no watchdog completion and no remaining rendering subscription. Native movement, clipping and cancellation checks passed. These counts and geometry do not prove perceptual smoothness or the absence of every native black frame; XAML previews omit desktop materials and motion.
+
+For foreground checks, `TWINKLETRAY_SMOKE_INTERACTIVE=1` displayed the existing test-start window and Computer Use clicked its visible Start focus checks button. The unchanged strict native foreground-transfer assertion passed, followed by all IPC checks. The earlier 0.3.5 failure remains historical evidence; it is not relabeled as a pass. This run does not establish native DPI switching, OS theme-switching or high-contrast-session coverage.
+
 ## 0.3.5 repeated-work and lifetime fixes
 
 The tray design, Shell accent policy and animation remain unchanged. Value-only rendering now compares typed layout inputs and keeps the existing controls without explicitly repositioning the window. The custom Acrylic callback no longer forwards an expired target during teardown. The final run passed 144 layout cases and 63/64 UI checks with 17 previews; the existing foreground-transfer assertion remains failed, and IPC was not reached. See [PERFORMANCE.md](PERFORMANCE.md) for the full regression results, intermediate failures and measurement limits.
