@@ -5,12 +5,12 @@ The supported release target is Windows x64. macOS, Apple hardware and Windows A
 Run `build.ps1` first, then create a portable ZIP and an unsigned MSIX from the published application:
 
 ```powershell
-./winui/package.ps1 -Architecture x64 -Version 0.3.3
+./winui/package.ps1 -Architecture x64 -Version 0.3.4
 ```
 
 The output is saved in `winui/artifacts/packages/`, with SHA256 checksums for the selected architecture. PDB files and `smoke-test.json` are excluded. `-SkipMsix` produces only the portable ZIP. Packaging does not install an application or certificate.
 
-Release archives use the `TwinkleTray-Native-<version>-x64` prefix, for example `TwinkleTray-Native-0.3.3-x64.zip`. Published packages are listed under [BK927/twinkle-tray-native releases](https://github.com/BK927/twinkle-tray-native/releases); CI results and uploaded artifacts belong to their matching [Actions run](https://github.com/BK927/twinkle-tray-native/actions). The `winui-v<version>` tag format and `SHA256SUMS.txt` are retained for updater compatibility. A local verification report does not establish publication.
+Release archives use the `TwinkleTray-Native-<version>-x64` prefix, for example `TwinkleTray-Native-0.3.4-x64.zip`. Published packages are listed under [BK927/twinkle-tray-native releases](https://github.com/BK927/twinkle-tray-native/releases); CI results and uploaded artifacts belong to their matching [Actions run](https://github.com/BK927/twinkle-tray-native/actions). The `winui-v<version>` tag format and `SHA256SUMS.txt` are retained for updater compatibility. A local verification report does not establish publication.
 
 ## Moving from 0.2.x to the Native releases
 

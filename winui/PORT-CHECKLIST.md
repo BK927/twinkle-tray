@@ -1,4 +1,6 @@
-# Twinkle Tray Native 0.3.3: source audit and validation checklist
+# Twinkle Tray Native 0.3.4: source audit and validation checklist
+
+0.3.4 restores the upstream Shell accent background and refines inline values, spacing and alignment. The current System surface rendered the exact Windows accent color; explicit Light/Dark overrides and Acrylic selection passed. Local results: 54 core tests, 144 layout cases, 63/64 UI checks and 17 previews. Native foreground transfer remains a failed check and IPC was not reached. See [UI-POLISH.md](UI-POLISH.md) for the complete scope and native capture method.
 
 0.3.3 changes the tray to a borderless notification-style banner that slides as a whole surface from the right and rests at the selected display's bottom-right. Local verification is partial: 144/144 layout cases and 59/60 UI checks passed; native foreground transfer failed while another process retained foreground. IPC did not run after that failure. New motion/clipping/scale/cancellation checks passed. The prior version's all-pass results below do not establish an all-pass 0.3.3 result. See [UI-POLISH.md](UI-POLISH.md).
 

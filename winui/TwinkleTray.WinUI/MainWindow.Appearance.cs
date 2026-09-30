@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using TwinkleTray.WinUI.Services;
 using Windows.Graphics;
 using Windows.UI.ViewManagement;
 
@@ -25,6 +26,10 @@ public sealed partial class MainWindow
     internal RectInt32 RevealedBounds { get; private set; }
     internal RectInt32 RestingBounds { get; private set; }
     internal bool BannerClipActive { get; private set; }
+    private TrayPersonalization _personalization;
+    private bool _appearanceQueued;
+    internal bool UsesAccentSurface { get; private set; }
+    internal Windows.UI.Color AccentSurfaceColor { get; private set; }
 
     private void InitializeSystemAppearance()
     {
@@ -53,22 +58,22 @@ public sealed partial class MainWindow
         };
     }
 
-    private void SystemColorsChanged(UISettings sender, object args) => DispatcherQueue.TryEnqueue(() =>
+    private void SystemColorsChanged(UISettings sender, object args) => QueueSystemAppearance();
+
+    private void QueueSystemAppearance()
     {
-        if (!_closing) ApplySystemAppearance();
-    });
+        if (_closing || _appearanceQueued) return;
+        _appearanceQueued = true;
+        DispatcherQueue.TryEnqueue(() => { _appearanceQueued = false; if (!_closing) ApplySystemAppearance(); });
+    }
 
     private void ApplySystemAppearance()
     {
         if (_closing) return;
-        // Theme brushes and the default WinUI controls continue to own the accent
-        // palette. Do not replace SystemAccentColor with a fixed branding color.
-        var background = _systemUi.GetColorValue(UIColorType.Background);
-        var systemTheme = 5 * background.G + 2 * background.R + background.B >= 8 * 128
-            ? ElementTheme.Light : ElementTheme.Dark;
+        _personalization = TrayPersonalization.Read(_systemUi);
         Root.RequestedTheme = _controller.Settings.Theme switch
         {
-            "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => systemTheme,
+            "light" => ElementTheme.Light, "dark" => ElementTheme.Dark, _ => _personalization.Theme,
         };
         ApplyNativeFrameTheme();
         ApplyBackdrop();
@@ -92,6 +97,8 @@ public sealed partial class MainWindow
 
     private void BeginPanelPresentation()
     {
+        // Recover changes missed while the tray was hidden.
+        ApplySystemAppearance();
         CancelPanelPresentation();
         uint request = ++_presentationRequest;
         _preparingPresentation = true;
@@ -217,6 +224,7 @@ public sealed partial class MainWindow
 
     private nint AnimationWindowProcedure(nint window, uint message, nuint wParam, nint lParam, nuint id, nuint data)
     {
+        if (message is 0x001A or 0x031A or 0x0320) QueueSystemAppearance(); // settings/theme/accent broadcasts
         // Only the temporary off-screen entrance pose can cross a monitor edge.
         // Keep the settled target scale until the window returns to that monitor.
         // Ordinary placement and real DPI changes continue through WinUI normally.

@@ -1,5 +1,22 @@
 # Twinkle Tray Native: UI layout and verification
 
+## 0.3.4 Shell accent and tray refinements
+
+The prior implementation verified the slider accent resource but omitted the upstream panel's `ColorPrevalence` background behavior. On this desktop, Shell accent coloring and transparency are enabled, so the neutral 0.3.3 Acrylic surface was incorrect.
+
+- System mode reads `SystemUsesLightTheme`, `ColorPrevalence` and `EnableTransparency` from the same personalization key used by upstream. Read failures fall back to UISettings and a neutral material. This is a compatibility read, not a Windows settings write.
+- A per-window `SystemBackdrop` supplies a `DesktopAcrylicController` with the Windows accent palette tint and matching fallback. Ordinary controls retain WinUI's accent resources. Explicit Light/Dark overrides use neutral backgrounds, matching upstream; high contrast takes precedence. The default controller still owns activation and accessibility policy.
+- UISettings color notifications and settings/theme/colorization broadcasts refresh the material. Each opening rereads preferences so hidden windows recover missed notifications.
+- The 56 DIP boxed values become 44 DIP inline native TextBoxes. Resting borders are transparent in Light/Dark; hover/focus and high-contrast borders retain native affordances. Monitor icons are 16 DIP, titles use semibold 14 DIP, rows have consistent spacing, and the footer heading aligns with the content instead of reserving a blank leading progress slot.
+
+A Computer Use capture of the running demo confirmed a blue accent surface and inline values. For this capture only, `TWINKLETRAY_DEMO_CAPTURE=1` with `--demo` exposes the otherwise transient window in the switcher/window inventory; it does not bypass dismissal and is ignored by normal execution and smoke tests. A subsequent physical input attempt could not keep the transient window targeted, so it is not counted as an input pass. The normal demo must be relaunched without that variable after capture.
+
+New smoke checks sample a rendered background pixel against the actual Windows accent, render explicit Light/Dark overrides, and check Acrylic/fallback material selection. On this host, the solid System surface rendered **#FF233989**, exactly matching `UISettings.AccentDark2`; explicit Light and Dark rendered **#FFF3F3F3** and **#FF202020**. The running native demo capture also showed the colored backdrop. These checks exercise the current host preferences without changing Windows settings; they do not prove OS theme-toggle or high-contrast sessions.
+
+The run completed at **2026-09-30 06:46:23 UTC**. **54 core tests, 11 settings pages, 44 runtime assertions, all 144 layout cases and 63 of 64 UI checks passed**, with 17 previews, no UI harness errors and zero hardware/user-settings writes. Evidence is in `artifacts/test-results/20260930T064349618-a4c016849d2a465ca7e8d1f00b3ab868/`. All four new surface/theme checks and retained numeric-editing checks passed. The native foreground-transfer check still failed with an external foreground window and a rejected foreground request; the integration runner therefore did not reach IPC. This remains a partial result. The independent deactivation/reopening check passed.
+
+Material implementation follows Microsoft's [custom SystemBackdrop guidance](https://learn.microsoft.com/en-us/windows/windows-app-sdk/api/winrt/microsoft.ui.xaml.media.systembackdrop?view=windows-app-sdk-1.8).
+
 ## 0.3.3 notification-style banner
 
 The intended reference is the brief banner at the bottom-right of Windows 11. The upstream `src/css/panel.scss` Win11 surface is a rounded, borderless panel translated horizontally inside a transparent toolbar window. The native version keeps interactive brightness controls rather than registering a toast payload; Windows notification inputs do not provide a brightness slider.

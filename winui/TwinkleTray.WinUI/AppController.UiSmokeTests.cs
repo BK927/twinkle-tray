@@ -81,6 +81,7 @@ internal sealed partial class AppController
                     UiVisualVerification.RecordProgress(previews, $"Popup checks complete: {theme}, {count} displays", result);
                 }
             await VerifyTrayEditingAsync(result, previews);
+            await VerifyTrayPersonalizationAsync(result, previews);
             await VerifyFlyoutLifecycleAsync(result, previews);
         }
         catch (Exception exception) { result.Errors.Add(exception.ToString()); }

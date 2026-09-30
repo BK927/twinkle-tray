@@ -55,9 +55,10 @@ public sealed partial class MainWindow : Window
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
         presenter.IsAlwaysOnTop = true;
-        AppWindow.IsShownInSwitchers = false;
+        bool capturePreview = controller.IsDemo && !controller.IsSmokeTest && Environment.GetEnvironmentVariable("TWINKLETRAY_DEMO_CAPTURE") == "1";
+        AppWindow.IsShownInSwitchers = capturePreview;
         // WS_EX_TOOLWINDOW excludes this transient flyout from Alt+Tab and the taskbar.
-        SetWindowLongPtr(_hwnd, -20, (nint)(GetWindowLongPtr(_hwnd, -20).ToInt64() | 0x80));
+        if (!capturePreview) SetWindowLongPtr(_hwnd, -20, (nint)(GetWindowLongPtr(_hwnd, -20).ToInt64() | 0x80));
         Root.Loaded += (_, _) => QueueLayout();
         Root.SizeChanged += (_, _) => QueueLayout();
         PanelBody.SizeChanged += (_, _) => QueueLayout();
@@ -153,13 +154,13 @@ public sealed partial class MainWindow : Window
                 var preferences = _controller.Preferences(monitor.Id);
                 string id = linked ? "all" : monitor.Id;
                 string name = linked ? T("GENERIC_ALL_DISPLAYS", "All displays") : _controller.DisplayName(monitor);
-                var card = new StackPanel { Spacing = 4 };
+                var card = new StackPanel { Spacing = 8 };
                 AutomationProperties.SetAutomationId(card, "monitor:" + id);
                 var title = new Grid { ColumnSpacing = 8, MinHeight = 24 };
                 title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 title.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                title.Children.Add(new FontIcon { Glyph = string.IsNullOrWhiteSpace(preferences.IconGlyph) ? (monitor.Connection.Contains("WMI", StringComparison.OrdinalIgnoreCase) ? "\uE770" : "\uE7F4") : preferences.IconGlyph, FontSize = 20, VerticalAlignment = VerticalAlignment.Center });
-                var label = new TextBlock { Text = linked || preferences.ShowName ? name : "", FontSize = 14, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                title.Children.Add(new FontIcon { Glyph = string.IsNullOrWhiteSpace(preferences.IconGlyph) ? (monitor.Connection.Contains("WMI", StringComparison.OrdinalIgnoreCase) ? "\uE770" : "\uE7F4") : preferences.IconGlyph, FontSize = 16, VerticalAlignment = VerticalAlignment.Center });
+                var label = new TextBlock { Text = linked || preferences.ShowName ? name : "", FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
                 ToolTipService.SetToolTip(label, name);
                 Grid.SetColumn(label, 1); title.Children.Add(label);
                 card.Children.Add(title);
@@ -317,7 +318,7 @@ public sealed partial class MainWindow : Window
         var editor = new TextBox
         {
             Style = (Style)Application.Current.Resources["TrayValueTextBoxStyle"],
-            Text = FormatValue(slider.Value), Width = slider.Maximum > 999 ? 64 : 56,
+            Text = FormatValue(slider.Value), Width = slider.Maximum > 999 ? 56 : 44,
             Visibility = showValue ? Visibility.Visible : Visibility.Collapsed,
         };
         AutomationProperties.SetName(editor, AutomationProperties.GetName(slider));
@@ -459,15 +460,26 @@ public sealed partial class MainWindow : Window
         slider.AddHandler(UIElement.PointerCaptureLostEvent, ended, true);
     }
 
-    private void AccessibilityChanged(AccessibilitySettings sender, object args) => DispatcherQueue.TryEnqueue(() => { if (!_closing) { ApplyBackdrop(); QueueLayout(); } });
+    private void AccessibilityChanged(AccessibilitySettings sender, object args) => DispatcherQueue.TryEnqueue(() => { if (!_closing) { ApplySystemAppearance(); QueueLayout(); } });
 
     private void ApplyBackdrop()
     {
         // Theme notifications can remain queued while the native window is closing.
         if (_closing) return;
-        bool acrylic = !_accessibility.HighContrast && _controller.Settings.UseAcrylic && Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported();
-        SystemBackdrop = acrylic ? SystemBackdrop ?? new DesktopAcrylicBackdrop() : null;
-        SolidBackground.Visibility = acrylic ? Visibility.Collapsed : Visibility.Visible;
+        bool highContrast = _accessibility.HighContrast;
+        UsesAccentSurface = !highContrast && _controller.Settings.Theme is not ("light" or "dark") && _personalization.ColoredSurface;
+        AccentSurfaceColor = _systemUi.GetColorValue(Root.ActualTheme == ElementTheme.Dark ? UIColorType.AccentDark2 : UIColorType.AccentLight3);
+        bool acrylic = !highContrast && _personalization.Transparency && _controller.Settings.UseAcrylic && Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported();
+        if (!acrylic) SystemBackdrop = null;
+        else if (UsesAccentSurface)
+        {
+            if (SystemBackdrop is AccentAcrylicBackdrop accent) accent.UpdateColor(AccentSurfaceColor);
+            else SystemBackdrop = new AccentAcrylicBackdrop(AccentSurfaceColor);
+        }
+        else if (SystemBackdrop is not DesktopAcrylicBackdrop) SystemBackdrop = new DesktopAcrylicBackdrop();
+        TintedBackground.Background = new SolidColorBrush(AccentSurfaceColor);
+        TintedBackground.Visibility = !acrylic && UsesAccentSurface ? Visibility.Visible : Visibility.Collapsed;
+        SolidBackground.Visibility = !acrylic && !UsesAccentSurface ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void QueueLayout()

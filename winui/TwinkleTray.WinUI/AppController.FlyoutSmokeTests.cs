@@ -108,8 +108,7 @@ internal sealed partial class AppController
             var presenter = (OverlappedPresenter)_window.AppWindow.Presenter;
             long nativeStyle = FlyoutTestGetWindowLongPtr(appearanceHwnd, -16).ToInt64();
             bool hasPopupStyle = !presenter.HasBorder && !presenter.HasTitleBar && (nativeStyle & 0x80000000L) != 0 && (nativeStyle & 0x00CF0000L) == 0;
-            var systemBackground = systemUi.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
-            var expectedSystemTheme = 5 * systemBackground.G + 2 * systemBackground.R + systemBackground.B >= 8 * 128 ? ElementTheme.Light : ElementTheme.Dark;
+            var expectedSystemTheme = TrayPersonalization.Read(systemUi).Theme;
             Settings.Theme = "dark"; _window.RefreshAppearanceForVerification();
             await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             bool darkWorks = root.ActualTheme == ElementTheme.Dark;
@@ -126,8 +125,8 @@ internal sealed partial class AppController
             result.Checks.Add(new("A borderless native popup follows light, dark and system theme with the Windows accent", hasPopupStyle && darkWorks && darkFrame == 1 && lightWorks && lightFrame == 0 && systemWorks && accentMatches,
                 $"Popup without document chrome={hasPopupStyle}; native style=0x{nativeStyle:X}; dark content/DWM={darkWorks}/{darkFrame}; light={lightWorks}/{lightFrame}; system={systemWorks}/{expectedSystemTheme}; accent={accentMatches}. App overrides exercised; OS theme/accent not changed."));
             Settings.UseAcrylic = true; _window.RefreshAppearanceForVerification();
-            bool acrylicExpected = Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported() && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
-            result.Checks.Add(new("The tray uses desktop Acrylic with a solid fallback", acrylicExpected ? _window.SystemBackdrop is DesktopAcrylicBackdrop && ((UIElement)root.FindName("SolidBackground")).Visibility == Visibility.Collapsed : _window.SystemBackdrop is null,
+            bool acrylicExpected = TrayPersonalization.Read(systemUi).Transparency && Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported() && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
+            result.Checks.Add(new("The tray uses desktop Acrylic with a solid fallback", acrylicExpected ? _window.SystemBackdrop is (DesktopAcrylicBackdrop or AccentAcrylicBackdrop) && ((UIElement)root.FindName("SolidBackground")).Visibility == Visibility.Collapsed : _window.SystemBackdrop is null,
                 $"Acrylic supported/expected={acrylicExpected}; backdrop={_window.SystemBackdrop?.GetType().Name}; OS controls final transparency. XAML bitmap previews exclude the compositor backdrop and native frame."));
             Settings.Theme = "light"; Settings.UseAcrylic = false; _window.RefreshAppearanceForVerification();
             _window.HidePanel(); _window.ShowPanel(keyboard); _window.HidePanel();
