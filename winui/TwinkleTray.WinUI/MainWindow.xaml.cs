@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -33,7 +32,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer _debounce = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly AccessibilitySettings _accessibility = new();
     private bool _updating, _closing, _flushing, _renderDeferred, _layoutQueued, _positioning, _accessibilitySubscribed, _refreshing;
-    private string _layoutSignature = "";
+    private LayoutSnapshot? _layoutSnapshot;
     private (string Id, string Text, int Start, int Length)? _refreshDraft;
     private TextBlock? _emptyMessage;
     private readonly nint _hwnd;
@@ -87,7 +86,6 @@ public sealed partial class MainWindow : Window
         catch (CultureNotFoundException) { Root.Language = "en"; }
         ApplySystemAppearance();
         _debounce.Interval = TimeSpan.FromMilliseconds(_controller.Settings.UpdateIntervalMilliseconds);
-        ApplyBackdrop();
         int corner = _controller.Settings.WindowsStyle == "win10" ? 1 : 2;
         DwmSetWindowAttribute(_hwnd, 33, ref corner, sizeof(int));
         PanelOutline.CornerRadius = new CornerRadius(corner == 1 ? 0 : 8);
@@ -108,17 +106,19 @@ public sealed partial class MainWindow : Window
         AutomationProperties.SetName(RefreshProgress, T("GENERIC_DETECTING_DISPLAYS", "Detecting displays…"));
         LinkButton.IsChecked = _controller.Settings.LinkedBrightness;
         RenderMonitors();
+        // Settings can move the toolbar without changing any monitor controls.
+        QueueLayout();
     }
 
     internal void RenderMonitors()
     {
         var monitors = _controller.VisibleMonitors.ToList();
-        string signature = LayoutSignature(monitors);
-        if (_layoutSignature == signature)
+        if (LayoutMatches(monitors))
         {
             UpdateVisibleValues(monitors);
             UpdateToolbar(monitors);
-            QueueLayout();
+            // Value editors have fixed widths. Actual content-size changes are
+            // observed by SizeChanged; brightness updates need no native measure/move.
             return;
         }
         if (_activePointers.Count > 0 || _flushing)
@@ -226,8 +226,8 @@ public sealed partial class MainWindow : Window
                 _emptyMessage = SecondaryText(T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings."), new Thickness(8, 0, 8, 16));
                 MonitorList.Children.Add(_emptyMessage);
             }
-            UpdateToolbar(monitors); ApplyRefreshingState();
-            _layoutSignature = signature; _renderDeferred = false; RenderGeneration++;
+            ApplyRefreshingState(monitors);
+            _layoutSnapshot = CaptureLayout(monitors); _renderDeferred = false; RenderGeneration++;
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (_closing) return;
@@ -371,28 +371,6 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    private string LayoutSignature(IReadOnlyList<MonitorSnapshot> monitors) => JsonSerializer.Serialize(new
-    {
-        _controller.Settings.LinkedBrightness, AllDisplays = T("GENERIC_ALL_DISPLAYS", "All displays"),
-        ContrastLabel = T("PANEL_LABEL_CONTRAST", "Contrast"), UnsupportedLabel = T("GENERIC_NOT_SUPPORTED", "Not supported"),
-        EmptyLabel = T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings."),
-        Monitors = monitors.Select(monitor =>
-        {
-            var preferences = _controller.Preferences(monitor.Id);
-            return new
-            {
-                monitor.Id, Name = _controller.DisplayName(monitor), monitor.Connection, monitor.SupportsContrast,
-                CanControl = _controller.CanControl(monitor), preferences.ShowName, preferences.ShowValue, preferences.ShowContrast, preferences.IconGlyph,
-                Features = preferences.Features.Where(pair => pair.Value.Enabled && !pair.Value.LinkedToBrightness).Select(pair => new
-                {
-                    pair.Key, pair.Value.Name, pair.Value.Min, pair.Value.Max, pair.Value.IconGlyph, pair.Value.IconType, pair.Value.IconPath, pair.Value.IconText,
-                    Hardware = _controller.Features(monitor.Id).Where(feature => feature.Code == pair.Key).Select(feature => new { feature.Name, feature.Maximum, feature.AllowedValues }),
-                }),
-                ContrastIsFeature = preferences.Features.TryGetValue(0x12, out var contrast) && contrast.Enabled,
-            };
-        }),
-    });
-
     private void UpdateVisibleValues(IReadOnlyList<MonitorSnapshot> monitors)
     {
         if (_flushing) return;
@@ -470,14 +448,21 @@ public sealed partial class MainWindow : Window
         UsesAccentSurface = !highContrast && _controller.Settings.Theme is not ("light" or "dark") && _personalization.ColoredSurface;
         AccentSurfaceColor = _systemUi.GetColorValue(Root.ActualTheme == ElementTheme.Dark ? UIColorType.AccentDark2 : UIColorType.AccentLight3);
         bool acrylic = !highContrast && _personalization.Transparency && _controller.Settings.UseAcrylic && Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported();
-        if (!acrylic) SystemBackdrop = null;
+        if (!acrylic) { if (SystemBackdrop is not null) SystemBackdrop = null; }
         else if (UsesAccentSurface)
         {
-            if (SystemBackdrop is AccentAcrylicBackdrop accent) accent.UpdateColor(AccentSurfaceColor);
+            if (SystemBackdrop is AccentAcrylicBackdrop accent)
+            {
+                if (accent.SurfaceColor != AccentSurfaceColor) accent.UpdateColor(AccentSurfaceColor);
+            }
             else SystemBackdrop = new AccentAcrylicBackdrop(AccentSurfaceColor);
         }
         else if (SystemBackdrop is not DesktopAcrylicBackdrop) SystemBackdrop = new DesktopAcrylicBackdrop();
-        TintedBackground.Background = new SolidColorBrush(AccentSurfaceColor);
+        if (TintedBackground.Background is SolidColorBrush tint)
+        {
+            if (tint.Color != AccentSurfaceColor) tint.Color = AccentSurfaceColor;
+        }
+        else TintedBackground.Background = new SolidColorBrush(AccentSurfaceColor);
         TintedBackground.Visibility = !acrylic && UsesAccentSurface ? Visibility.Visible : Visibility.Collapsed;
         SolidBackground.Visibility = !acrylic && !UsesAccentSurface ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -545,7 +530,7 @@ public sealed partial class MainWindow : Window
         QueueLayout();
     }
 
-    private void ApplyRefreshingState()
+    private void ApplyRefreshingState(IReadOnlyList<MonitorSnapshot>? monitors = null)
     {
         foreach (var (control, enabled) in _controlAvailability) control.IsEnabled = enabled && !_refreshing;
         // Disabled native controls already communicate busy state. Dimming the
@@ -555,7 +540,7 @@ public sealed partial class MainWindow : Window
         RefreshProgress.Opacity = _refreshing ? 1 : 0;
         RefreshMenuItem.IsEnabled = !_refreshing;
         RefreshMoreMenuItem.IsEnabled = !_refreshing;
-        UpdateToolbar(_controller.VisibleMonitors.ToList());
+        UpdateToolbar(monitors ?? _controller.VisibleMonitors.ToList());
         LinkButton.IsEnabled = !_refreshing;
         if (_emptyMessage is not null) _emptyMessage.Text = _refreshing ? T("GENERIC_DETECTING_DISPLAYS", "Detecting displays…") : T("GENERIC_NO_COMPATIBLE_DISPLAYS", "No compatible displays found. Check that DDC/CI is enabled in your monitor settings.");
     }

@@ -15,6 +15,7 @@ internal sealed partial class AppController
     private readonly CancellationTokenSource _lifetime = new();
     private readonly SemaphoreSlim _operations = new(1, 1);
     private readonly SemaphoreSlim _hotkeyOperations = new(1, 1);
+    private readonly CoalescingRefreshQueue _refreshQueue;
     private readonly DispatcherQueue _dispatcher = DispatcherQueue.GetForCurrentThread();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _hotplug = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -38,6 +39,7 @@ internal sealed partial class AppController
 
     internal AppController()
     {
+        _refreshQueue = new(_operations, RefreshCoreAsync, _lifetime.Token);
         try { Settings = IsDemo ? new AppSettings() : _store.Load(); }
         catch (SettingsLoadException exception) { Settings = new(); _loadError = exception.Message; _settingsSaveBlocked = exception.BackupPath is null; Program.Log(exception); }
         _savedStartup = Settings.RunAtStartup;
@@ -126,8 +128,15 @@ internal sealed partial class AppController
     public async Task RefreshAsync()
     {
         if (_quitting) return;
-        await _operations.WaitAsync();
-        if (_quitting) { _operations.Release(); return; }
+        try { await _refreshQueue.RequestAsync(); }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+    }
+
+    // The queue owns the shared operation gate and merges pending requests. A
+    // request arriving during this scan receives a fresh scan after it finishes.
+    private async Task RefreshCoreAsync()
+    {
+        if (_quitting) return;
         _window.SetRefreshing(true);
         try
         {
@@ -140,7 +149,7 @@ internal sealed partial class AppController
         }
         catch (OperationCanceledException) { }
         catch (Exception exception) { Report(exception); }
-        finally { _window.SetRefreshing(false); _operations.Release(); }
+        finally { _window.SetRefreshing(false); }
     }
 
     public async Task TrySetAsync(string id, double value, bool contrast = false, bool linked = false, bool throwOnError = false, bool automatic = false)

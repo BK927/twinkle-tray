@@ -40,9 +40,9 @@ internal sealed partial class AppController
                 _lastPoll = now;
                 await RefreshAsync();
             }
-            var due = ScheduleEvaluator.GetDue(Settings, _lastSchedule, now);
+            bool hasSchedule = Settings.Schedule?.Any(entry => entry is not null && entry.Enabled) == true;
+            if (hasSchedule && ScheduleEvaluator.GetDue(Settings, _lastSchedule, now).Count > 0) _schedulePending = true;
             _lastSchedule = now;
-            if (due.Count > 0) _schedulePending = true;
             if (_automationPaused || locked)
             {
                 SuspendAutomationTransitions();
@@ -58,28 +58,20 @@ internal sealed partial class AppController
             }
 
             // Automatic control priority is idle > foreground profile > light sensor > schedule.
-            string? foreground = simulation is null ? DesktopEnvironment.GetForegroundProcessPath() : simulation.Foreground;
-            bool ownWindow = foreground is not null && Path.GetFileName(foreground).Equals("TwinkleTray.WinUI.exe", StringComparison.OrdinalIgnoreCase);
-            if (!ownWindow)
-            {
-                var profile = foreground is null ? null : ProfileResolver.Match(foreground, Settings.Profiles);
-                if (profile?.Id != _activeProfile?.Id)
-                {
-                    if (_activeProfile?.RestorePrevious == true) await ApplyLevelsAsync(_beforeProfile, false);
-                    _beforeProfile.Clear(); _activeProfile = profile;
-                    if (profile is not null)
-                    {
-                        foreach (var monitor in VisibleMonitors.Where(CanControl)) _beforeProfile[monitor.Id] = _dimmed ? _beforeIdle.GetValueOrDefault(monitor.Id, LogicalBrightness(monitor)) : LogicalBrightness(monitor);
-                        await ApplyProfileAsync(profile, automatic: true);
-                    }
-                }
-            }
+            await UpdateForegroundProfileAsync(simulation: simulation);
 
-            var sensorIds = Settings.Sensor.Enabled ? Settings.Sensor.Monitors.Where(x => x.Value.Enabled).Select(x => x.Key).ToHashSet() : new HashSet<string>();
             if (_activeProfile is null && (_schedulePending || Settings.ScheduleInterpolation))
             {
-                var levels = ScheduleEvaluator.GetCurrentLevels(Settings, now, VisibleMonitors.Select(m => m.Id));
-                await ApplyLevelsAsync(levels.Where(x => !sensorIds.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value), !Settings.ScheduleInterpolation);
+                if (hasSchedule)
+                {
+                    var levels = ScheduleEvaluator.GetCurrentLevels(Settings, now, VisibleMonitors.Select(m => m.Id));
+                    if (Settings.Sensor.Enabled)
+                    {
+                        var sensorIds = Settings.Sensor.Monitors.Where(x => x.Value.Enabled).Select(x => x.Key).ToHashSet();
+                        levels = levels.Where(x => !sensorIds.Contains(x.Key)).ToDictionary(x => x.Key, x => x.Value);
+                    }
+                    await ApplyLevelsAsync(levels, !Settings.ScheduleInterpolation);
+                }
                 _schedulePending = false;
             }
             if (_activeProfile is null && Settings.Sensor.Enabled && (now - _lastSensor).TotalSeconds >= Settings.Sensor.PollSeconds)
@@ -101,6 +93,23 @@ internal sealed partial class AppController
         catch (OperationCanceledException) { }
         catch (Exception exception) { ReportAutomationError(exception.Message); }
         finally { _tickBusy = false; }
+    }
+
+    private async Task UpdateForegroundProfileAsync(Func<string?>? getForeground = null, AutomationObservation? simulation = null)
+    {
+        // A process path query opens a native process handle and allocates a 32K character buffer.
+        // Keep observing an active profile even if its setting was disabled/removed, so its
+        // previous levels are still restored on departure. Opening our own UI preserves it.
+        if (_activeProfile is null && !Settings.Profiles.Any(profile => profile is not null && profile.Enabled && !string.IsNullOrWhiteSpace(profile.Path))) return;
+        string? foreground = simulation is not null ? simulation.Foreground : (getForeground ?? DesktopEnvironment.GetForegroundProcessPath)();
+        if (foreground is not null && Path.GetFileName(foreground).Equals("TwinkleTray.WinUI.exe", StringComparison.OrdinalIgnoreCase)) return;
+        var profile = foreground is null ? null : ProfileResolver.Match(foreground, Settings.Profiles);
+        if (profile?.Id == _activeProfile?.Id) return;
+        if (_activeProfile?.RestorePrevious == true) await ApplyLevelsAsync(_beforeProfile, false);
+        _beforeProfile.Clear(); _activeProfile = profile;
+        if (profile is null) return;
+        foreach (var monitor in VisibleMonitors.Where(CanControl)) _beforeProfile[monitor.Id] = _dimmed ? _beforeIdle.GetValueOrDefault(monitor.Id, LogicalBrightness(monitor)) : LogicalBrightness(monitor);
+        await ApplyProfileAsync(profile, automatic: true);
     }
 
     private void SuspendAutomationTransitions()

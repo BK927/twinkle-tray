@@ -140,7 +140,8 @@ public sealed partial class SettingsWindow
         {
             while ((_viewRestorePending || _restoringView) && watch.Elapsed < TimeSpan.FromSeconds(3))
             {
-                Root.UpdateLayout();
+                // Restoration performs its own layout and settling. Forcing layout
+                // on every poll can starve the low-priority callback being awaited.
                 await Task.Delay(25);
             }
             if (_viewRestorePending || _restoringView) break;

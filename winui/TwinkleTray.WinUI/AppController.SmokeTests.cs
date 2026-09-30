@@ -58,6 +58,8 @@ internal sealed partial class AppController
         await UpdateIdleAsync(false);
         Check(!_dimmed && Math.Abs(LogicalBrightness(_monitors[0]) - 63) < .01, "Manual adjustment survives delayed idle restoration and pause");
         await VerifyAutomationForSmokeTestAsync(Check);
+        await VerifyBackgroundPerformanceForSmokeTestAsync(Check);
+        VerifyLayoutPerformanceForSmokeTest(Check);
 
         using var reserve = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
         int port = ((IPEndPoint)reserve.Client.LocalEndPoint!).Port; reserve.Close();
@@ -112,6 +114,15 @@ internal sealed partial class AppController
         }
         AutomationObservation Input(DateTime now, bool locked = false, string? foreground = null, int idleSeconds = 0, bool fullscreen = false, bool media = false)
             => new(now, locked, foreground, TimeSpan.FromSeconds(idleSeconds), fullscreen, media);
+        async Task<double> WaitForTransitionCompletionAsync()
+        {
+            // These checks assert eventual restoration, not scheduler precision.
+            // Observe completion with a bound instead of assuming that four UI
+            // dispatcher continuations fit within 150 ms of scheduling slack.
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            while (_transitions.Count > 0 && elapsed.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(25);
+            return elapsed.Elapsed.TotalMilliseconds;
+        }
         async Task ResetAsync()
         {
             foreach (var transition in _transitions.Values.ToArray()) transition.Cancel();
@@ -157,10 +168,10 @@ internal sealed partial class AppController
                 double interruptedLevel = Level(external);
                 _automationPaused = false;
                 await TickAsync(Input(start.AddMinutes(3)));
-                await Task.Delay(1150);
-                Observe(Math.Abs(Level(external) - 90) < .01,
+                double completionMs = await WaitForTransitionCompletionAsync();
+                Observe(Math.Abs(Level(external) - 90) < .01 && !_transitions.ContainsKey(external),
                     locked ? "A schedule transition completes after lock cancellation" : "A schedule transition completes after pause cancellation",
-                    $"Interrupted={interruptedLevel}; resumed={Level(external)}");
+                    $"Interrupted={interruptedLevel}; resumed={Level(external)}; completion wait={completionMs:0}ms (5000ms bound)");
             }
 
             foreach (bool locked in new[] { false, true })
@@ -173,10 +184,10 @@ internal sealed partial class AppController
                 await Task.Delay(40);
                 _automationPaused = false;
                 await TickAsync(Input(start.AddMinutes(2), foreground: @"C:\Fixtures\regression-fixture.exe"));
-                await Task.Delay(1150);
-                Observe(Math.Abs(Level(external) - 90) < .01,
+                double completionMs = await WaitForTransitionCompletionAsync();
+                Observe(Math.Abs(Level(external) - 90) < .01 && !_transitions.ContainsKey(external),
                     locked ? "An active profile transition resumes after unlock without a foreground change" : "An active profile transition resumes after pause without a foreground change",
-                    $"Resumed={Level(external)}");
+                    $"Resumed={Level(external)}; completion wait={completionMs:0}ms (5000ms bound)");
             }
 
             await ResetAsync(); Schedule(); Settings.SmoothTransitions = true; Settings.TransitionSeconds = 1;
@@ -271,9 +282,9 @@ internal sealed partial class AppController
             // Do not yield to the canceled transition's cleanup before resuming.
             _automationPaused = false;
             await TickAsync(Input(start.AddMinutes(2).AddSeconds(2)));
-            await Task.Delay(1150);
+            double immediateCompletionMs = await WaitForTransitionCompletionAsync();
             Observe(Math.Abs(Level(external) - 90) < .01 && !_transitions.ContainsKey(external),
-                "Immediate pause and resume restarts a transition before prior cleanup", $"Completed level={Level(external)}; transitioning={_transitions.ContainsKey(external)}");
+                "Immediate pause and resume restarts a transition before prior cleanup", $"Completed level={Level(external)}; transitioning={_transitions.ContainsKey(external)}; completion wait={immediateCompletionMs:0}ms (5000ms bound)");
 
             await ResetAsync(); Schedule(); Settings.SmoothTransitions = true; Settings.TransitionSeconds = 1;
             Settings.IdleEnabled = true; Settings.IdleMinutes = 0; Settings.IdleSeconds = 1; Settings.IdleBrightness = 5;

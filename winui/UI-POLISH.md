@@ -1,5 +1,9 @@
 # Twinkle Tray Native: UI layout and verification
 
+## 0.3.5 repeated-work and lifetime fixes
+
+The tray design, Shell accent policy and animation remain unchanged. Value-only rendering now compares typed layout inputs and keeps the existing controls without explicitly repositioning the window. The custom Acrylic callback no longer forwards an expired target during teardown. The final run passed 144 layout cases and 63/64 UI checks with 17 previews; the existing foreground-transfer assertion remains failed, and IPC was not reached. See [PERFORMANCE.md](PERFORMANCE.md) for the full regression results, intermediate failures and measurement limits.
+
 ## 0.3.4 Shell accent and tray refinements
 
 The prior implementation verified the slider accent resource but omitted the upstream panel's `ColorPrevalence` background behavior. On this desktop, Shell accent coloring and transparency are enabled, so the neutral 0.3.3 Acrylic surface was incorrect.

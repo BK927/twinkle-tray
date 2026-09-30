@@ -1,4 +1,6 @@
-# Twinkle Tray Native 0.3.4: source audit and validation checklist
+# Twinkle Tray Native 0.3.5: source audit and validation checklist
+
+0.3.5 reduces repeated monitor scans, inactive automation work and value-only UI layout work while retaining the 0.3.4 appearance. See [PERFORMANCE.md](PERFORMANCE.md) for scope, regression coverage and measurement limits. The version-specific results below remain historical evidence.
 
 0.3.4 restores the upstream Shell accent background and refines inline values, spacing and alignment. The current System surface rendered the exact Windows accent color; explicit Light/Dark overrides and Acrylic selection passed. Local results: 54 core tests, 144 layout cases, 63/64 UI checks and 17 previews. Native foreground transfer remains a failed check and IPC was not reached. See [UI-POLISH.md](UI-POLISH.md) for the complete scope and native capture method.
 
