@@ -49,8 +49,8 @@ public sealed partial class MainWindow : Window
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "logo.ico"));
         var presenter = (OverlappedPresenter)AppWindow.Presenter;
-        // Retain the system non-client border so DWM owns the edge, shadow and corners.
-        presenter.SetBorderAndTitleBar(true, false);
+        // This is a notification-style transient surface, not a small document window.
+        presenter.SetBorderAndTitleBar(false, false);
         presenter.IsResizable = false;
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
@@ -89,6 +89,7 @@ public sealed partial class MainWindow : Window
         ApplyBackdrop();
         int corner = _controller.Settings.WindowsStyle == "win10" ? 1 : 2;
         DwmSetWindowAttribute(_hwnd, 33, ref corner, sizeof(int));
+        PanelOutline.CornerRadius = new CornerRadius(corner == 1 ? 0 : 8);
         Title = LocalizationService.ProductName;
         bool win10 = _controller.Settings.WindowsStyle == "win10";
         Grid.SetRow(ToolbarSurface, win10 ? 0 : 2);

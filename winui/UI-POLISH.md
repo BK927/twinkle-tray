@@ -1,5 +1,22 @@
 # Twinkle Tray Native: UI layout and verification
 
+## 0.3.3 notification-style banner
+
+The intended reference is the brief banner at the bottom-right of Windows 11. The upstream `src/css/panel.scss` Win11 surface is a rounded, borderless panel translated horizontally inside a transparent toolbar window. The native version keeps interactive brightness controls rather than registering a toast payload; Windows notification inputs do not provide a brightness slider.
+
+- The HWND now uses `WS_POPUP` without document-window border/caption styles. A thin theme outline and rounded-corner preference define the surface; it remains absent from the taskbar and Alt+Tab.
+- In Windows 11 style, the icon chooses the display and the panel rests 12 DIP inside its bottom-right work-area edge. Overflow-icon coordinates do not pull the panel upward. Windows 10 style retains its previous anchor placement.
+- After layout settles while cloaked, the entire HWND and backdrop slide horizontally over 300ms with an ease-out curve. The prior 167ms content-only translation/fade is removed. A temporary native region clips the moving portion to the chosen display; transient cross-edge DPI messages are suppressed until the HWND returns to its settled monitor. Normal positioning and real DPI changes still pass to WinUI outside the entrance.
+- Closing hides the HWND before cancelling its timer/region. Cancelled preparation or motion cannot reveal the panel later. Windows animation and high-contrast preferences can skip the entrance.
+
+The local x64 run completed at **2026-09-30 05:44:07 UTC** with **partial verification**: 54 core tests, 11 settings pages, 44 runtime assertions, 144 layout cases and 59 of 60 UI checks passed. Fourteen content previews were generated, with zero hardware/user-settings writes and zero UI harness errors. Evidence is in `artifacts/test-results/20260930T054120289-761191d253f148a18d8a32773e5436f8/`.
+
+Native rectangle samples confirmed horizontal whole-window movement, constant size and content scale, clipping to the work area, bottom-right arrival, borderless popup styles and cancellation during motion. Geometry checks now wait for entrance completion. The native foreground-transfer/dismissal check failed: another process retained foreground and the probe's foreground request returned false. The panel did receive deactivation and hide; the independent reopening check passed. The run does not prove that the popup change is unrelated to that failure. Attempts to repeat the focused check could not establish the test-start input on the shared desktop. The assertions were not relaxed; **UI and integration reports retain `Passed: false`**, and the integration runner did not reach its IPC phase. Earlier passing 0.3.2 focus/IPC results are historical, not validation of 0.3.3.
+
+XAML PNGs exclude the desktop backdrop, native shadow and motion; automated coordinates do not prove perceptual smoothness or reproduce the private Shell notification renderer. Actual OS theme/accent changes, native DPI switching and physical tray input remain unverified.
+
+Reference: [Windows notification content and supported inputs](https://learn.microsoft.com/windows/apps/develop/notifications/app-notifications/app-notifications-content). Earlier results below describe their respective versions.
+
 ## 0.3.2 system appearance and entrance
 
 - The flyout retains a native border without a title bar so DWM can supply its normal border, shadow and rounding. The previous XAML-drawn rectangular outline is removed. The native frame follows light/dark content; the system chooses its border color.

@@ -77,10 +77,8 @@ internal sealed partial class AppController
         {
             IReadOnlyList<string> runtimeChecks = [];
             int settingsPages = 0, uiLayoutCases = 0;
-            Window? interactiveStart = null;
             try
             {
-                interactiveStart = await StartInteractiveFocusVerificationAsync();
                 Settings.Schedule.Add(new ScheduleEntry { Enabled = false, Time = "20:00", Brightness = 40 });
                 Settings.Hotkeys.Add(new HotkeyBinding { Enabled = false });
                 Settings.Monitors["demo:external"] = new MonitorSettings { ShowContrast = true };
@@ -101,7 +99,7 @@ internal sealed partial class AppController
                 }
                 catch (Exception reportException) { Program.Log(reportException); }
             }
-            finally { interactiveStart?.Close(); Quit(); }
+            finally { Quit(); }
         }
     }
 

@@ -110,7 +110,7 @@ public sealed partial class MainWindow
         uint request = _panelFocusRequest;
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!_panelFocusPending || request != _panelFocusRequest || !IsShown || _closing || _refreshing || _preparingPresentation) return;
+            if (!_panelFocusPending || request != _panelFocusRequest || !IsShown || _closing || _refreshing || _preparingPresentation || EntranceRunning) return;
             Control? target = _lastFocusedControl is { } id && _focusTargets.TryGetValue(id, out var last) && last.IsEnabled && last.Visibility == Visibility.Visible ? last : null;
             target ??= _sliders.Values.FirstOrDefault(slider => slider.IsEnabled);
             target ??= SettingsButton;
@@ -121,7 +121,6 @@ public sealed partial class MainWindow
 
     public void HidePanel()
     {
-        CancelPanelPresentation();
         if (Root.XamlRoot is not null && FocusManager.GetFocusedElement(Root.XamlRoot) is Control focused)
         {
             string id = AutomationProperties.GetAutomationId(focused);
@@ -133,6 +132,7 @@ public sealed partial class MainWindow
         IsShown = false;
         _controller.SetTrayPanelVisible(false);
         AppWindow.Hide();
+        CancelPanelPresentation();
         SetPanelCloaked(false);
     }
 
@@ -180,7 +180,7 @@ public sealed partial class MainWindow
 
     private void PositionPanel(bool useAnchor = false)
     {
-        if (_positioning || _closing) return;
+        if (_positioning || _closing || EntranceRunning) return;
         _positioning = true;
         try
         {
@@ -210,9 +210,12 @@ public sealed partial class MainWindow
             LayoutMetrics = (desiredHeight, width, height, work.Width, work.Height, scale);
 
             int right = work.X + work.Width, bottom = work.Y + work.Height;
-            int x = hasAnchor ? _anchorBounds.X + _anchorBounds.Width - width : right - width - gap;
+            bool banner = _controller.Settings.WindowsStyle != "win10";
+            // The icon chooses the display. Windows 11's banner rests at that
+            // display's bottom-right, including when the icon is in overflow.
+            int x = !banner && hasAnchor ? _anchorBounds.X + _anchorBounds.Width - width : right - width - gap;
             int y = bottom - height - gap;
-            if (hasAnchor)
+            if (!banner && hasAnchor)
             {
                 if (_anchorBounds.Y + _anchorBounds.Height <= work.Y) y = work.Y + gap;
                 else if (_anchorBounds.Y >= bottom) y = bottom - height - gap;

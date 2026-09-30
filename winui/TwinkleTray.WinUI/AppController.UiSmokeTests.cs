@@ -42,6 +42,7 @@ internal sealed partial class AppController
                     LocalizationService.Configure("ko");
                     _window.ApplySettings(); _window.ShowPanel();
                     await UiVisualVerification.WaitLoadedAsync((FrameworkElement)_window.Content);
+                    await _window.WaitForPresentationForVerificationAsync();
                     _window.ShowError("연결 상태를 다시 확인하세요. This deliberately long diagnostic message must remain readable within the work area.");
                     _window.RecalculateLayoutForVerification();
                     await UiVisualVerification.SettleAsync((FrameworkElement)_window.Content);
@@ -113,6 +114,7 @@ internal sealed partial class AppController
         var root = (FrameworkElement)_window.Content;
         if (root.FindName("ErrorBar") is InfoBar error) error.IsOpen = false;
         _window.ApplySettings(); _window.ShowPanel();
+        await _window.WaitForPresentationForVerificationAsync();
         await UiVisualVerification.SettleAsync(root);
         T Element<T>(string id) where T : FrameworkElement => UiVisualVerification.AuthoredElements(root).OfType<T>()
             .Single(element => AutomationProperties.GetAutomationId(element) == id);

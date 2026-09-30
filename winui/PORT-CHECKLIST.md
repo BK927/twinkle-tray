@@ -1,4 +1,6 @@
-# Twinkle Tray Native 0.3.2: source audit and validation checklist
+# Twinkle Tray Native 0.3.3: source audit and validation checklist
+
+0.3.3 changes the tray to a borderless notification-style banner that slides as a whole surface from the right and rests at the selected display's bottom-right. Local verification is partial: 144/144 layout cases and 59/60 UI checks passed; native foreground transfer failed while another process retained foreground. IPC did not run after that failure. New motion/clipping/scale/cancellation checks passed. The prior version's all-pass results below do not establish an all-pass 0.3.3 result. See [UI-POLISH.md](UI-POLISH.md).
 
 This is a feature audit, not a claim that every monitor or Windows configuration has been tested. The reference is upstream commit [`e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e`](https://github.com/xanderfrangos/twinkle-tray/tree/e3d5bb0bde75f7ef1a6ae450b314090c804e0f8e). Electron sources are preserved alongside the native implementation.
 

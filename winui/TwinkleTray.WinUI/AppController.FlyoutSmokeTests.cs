@@ -41,12 +41,13 @@ internal sealed partial class AppController
         result.Checks.Add(new("A new icon press replaces the previous gesture", replacement != 0 && replacement != abandoned && tracker.ConsumeActivation() == replacement && !tracker.HasPendingGesture,
             $"Old token={abandoned}; replacement={replacement}. Pure input-state test."));
 
-        Window? probe = null;
+        Window? probe = null, interactiveStart = null;
         MenuFlyout? moreFlyout = null;
         var root = (FrameworkElement)_window.Content;
         _window.SetVerificationHoldOpen(false);
         try
         {
+            interactiveStart = await StartInteractiveFocusVerificationAsync();
             await _window.FlushForVerificationAsync();
             _window.HidePanel();
             Settings = new AppSettings { Language = "ko", Theme = "light", UseAcrylic = false, WindowsStyle = "win11", CheckScheduleAtStartup = false };
@@ -65,38 +66,65 @@ internal sealed partial class AppController
             var pointer = new TrayActivation(anchor, false, 0);
             _window.ShowPanel(keyboard);
             await UiVisualVerification.WaitLoadedAsync(root);
-            await _window.WaitForPresentationForVerificationAsync();
+            await _window.WaitForPreparationForVerificationAsync();
 
             nint appearanceHwnd = WinRT.Interop.WindowNative.GetWindowHandle(_window);
             var revealed = _window.RevealedBounds;
+            var targetBounds = _window.RestingBounds;
             FlyoutTestDwmGetWindowAttribute(appearanceHwnd, 14, out int cloaked, sizeof(int));
-            await Task.Delay(220);
+            var motionBounds = new List<RectInt32>();
+            var motionScales = new List<double>();
+            bool allMotionClipped = true;
+            long motionDeadline = Environment.TickCount64 + 1500;
+            do
+            {
+                FlyoutTestGetWindowRect(appearanceHwnd, out var actual);
+                motionBounds.Add(new RectInt32(actual.Left, actual.Top, actual.Right - actual.Left, actual.Bottom - actual.Top));
+                motionScales.Add(root.XamlRoot.RasterizationScale);
+                if (_window.EntranceRunning)
+                {
+                    int kind = FlyoutTestGetWindowRgnBox(appearanceHwnd, out var clip);
+                    allMotionClipped &= kind == 1 || (kind >= 2 && clip.Left >= 0 && clip.Top >= 0 &&
+                        actual.Left + clip.Right <= currentArea.WorkArea.X + currentArea.WorkArea.Width &&
+                        actual.Top + clip.Bottom <= currentArea.WorkArea.Y + currentArea.WorkArea.Height);
+                }
+                await Task.Delay(16);
+            } while (_window.EntranceRunning && Environment.TickCount64 < motionDeadline);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             var settledBounds = new RectInt32(_window.AppWindow.Position.X, _window.AppWindow.Position.Y, _window.AppWindow.Size.Width, _window.AppWindow.Size.Height);
-            result.Checks.Add(new("The first visible frame uses settled bounds and releases its preparation cloak", _window.LastCloakSucceeded && _window.LastPresentationSettled && cloaked == 0 && revealed.Equals(settledBounds),
-                $"Cloak available={_window.LastCloakSucceeded}; layout settled={_window.LastPresentationSettled}; cloak after reveal={cloaked}; revealed={revealed}; after entrance={settledBounds}. Actual DWM state and window bounds; not a screen-video smoothness judgment."));
+            bool constantSize = motionBounds.All(bounds => bounds.Width == targetBounds.Width && bounds.Height == targetBounds.Height && bounds.Y == targetBounds.Y);
+            bool movesLeft = motionBounds.Zip(motionBounds.Skip(1)).All(pair => pair.First.X >= pair.Second.X);
+            int gap = (int)Math.Round(12 * root.XamlRoot.RasterizationScale);
+            bool bottomRight = settledBounds.X == currentArea.WorkArea.X + currentArea.WorkArea.Width - settledBounds.Width - gap &&
+                settledBounds.Y == currentArea.WorkArea.Y + currentArea.WorkArea.Height - settledBounds.Height - gap;
+            result.Checks.Add(new("The banner settles bottom-right without stretching or changing its content scale", _window.LastCloakSucceeded && _window.LastPresentationSettled && cloaked == 0 && targetBounds.Equals(settledBounds) && constantSize && motionScales.Distinct().Count() == 1 && bottomRight,
+                $"Cloak={_window.LastCloakSucceeded}/{cloaked}; layout settled={_window.LastPresentationSettled}; target={targetBounds}; revealed={revealed}; settled={settledBounds}; samples={motionBounds.Count}; constant size={constantSize}; scales={string.Join(",", motionScales.Distinct())}; bottom-right={bottomRight}. Native window geometry; not a visual smoothness claim."));
             var systemUi = new Windows.UI.ViewManagement.UISettings();
             bool expectedAnimation = systemUi.AnimationsEnabled && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
-            result.Checks.Add(new("The Fluent entrance completes and respects the current Windows motion preference", _window.LastEntranceAnimated == expectedAnimation && !_window.EntranceRunning,
-                $"System animations={systemUi.AnimationsEnabled}; entrance animated={_window.LastEntranceAnimated}; running after 220ms={_window.EntranceRunning}. Current preference observed; Windows settings were not changed."));
+            bool slideObserved = motionBounds.Count > 1 && motionBounds[0].X > settledBounds.X && movesLeft;
+            int regionAfter = FlyoutTestGetWindowRgnBox(appearanceHwnd, out _);
+            result.Checks.Add(new("The whole native banner slides from the right and releases its temporary clip", _window.LastEntranceAnimated == expectedAnimation && !_window.EntranceRunning && (!expectedAnimation || slideObserved) && allMotionClipped && !_window.BannerClipActive && regionAfter == 0,
+                $"System animations={systemUi.AnimationsEnabled}; animated={_window.LastEntranceAnimated}; native slide observed={slideObserved}; monotonic={movesLeft}; native region stayed inside work area={allMotionClipped}; clip active={_window.BannerClipActive}; final region result={regionAfter}. Actual HWND positions include the backdrop; Windows preferences were not changed."));
             var presenter = (OverlappedPresenter)_window.AppWindow.Presenter;
-            bool hasNativeBorder = presenter.HasBorder && !presenter.HasTitleBar;
+            long nativeStyle = FlyoutTestGetWindowLongPtr(appearanceHwnd, -16).ToInt64();
+            bool hasPopupStyle = !presenter.HasBorder && !presenter.HasTitleBar && (nativeStyle & 0x80000000L) != 0 && (nativeStyle & 0x00CF0000L) == 0;
             var systemBackground = systemUi.GetColorValue(Windows.UI.ViewManagement.UIColorType.Background);
             var expectedSystemTheme = 5 * systemBackground.G + 2 * systemBackground.R + systemBackground.B >= 8 * 128 ? ElementTheme.Light : ElementTheme.Dark;
             Settings.Theme = "dark"; _window.RefreshAppearanceForVerification();
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             bool darkWorks = root.ActualTheme == ElementTheme.Dark;
             FlyoutTestDwmGetWindowAttribute(appearanceHwnd, 20, out int darkFrame, sizeof(int));
             Settings.Theme = "light"; _window.RefreshAppearanceForVerification();
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             bool lightWorks = root.ActualTheme == ElementTheme.Light;
             FlyoutTestDwmGetWindowAttribute(appearanceHwnd, 20, out int lightFrame, sizeof(int));
             Settings.Theme = "system"; _window.RefreshAppearanceForVerification();
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             bool systemWorks = root.ActualTheme == expectedSystemTheme;
             var accent = (Windows.UI.Color)Application.Current.Resources["SystemAccentColor"];
             bool accentMatches = accent.Equals(systemUi.GetColorValue(Windows.UI.ViewManagement.UIColorType.Accent));
-            result.Checks.Add(new("Content and native frame follow light, dark and current Windows theme while retaining the system accent", hasNativeBorder && darkWorks && darkFrame == 1 && lightWorks && lightFrame == 0 && systemWorks && accentMatches,
-                $"Native border without title={hasNativeBorder}; dark content/frame={darkWorks}/{darkFrame}; light={lightWorks}/{lightFrame}; system={systemWorks}/{expectedSystemTheme}; accent matches UISettings={accentMatches}. App overrides exercised; OS theme/accent not changed."));
+            result.Checks.Add(new("A borderless native popup follows light, dark and system theme with the Windows accent", hasPopupStyle && darkWorks && darkFrame == 1 && lightWorks && lightFrame == 0 && systemWorks && accentMatches,
+                $"Popup without document chrome={hasPopupStyle}; native style=0x{nativeStyle:X}; dark content/DWM={darkWorks}/{darkFrame}; light={lightWorks}/{lightFrame}; system={systemWorks}/{expectedSystemTheme}; accent={accentMatches}. App overrides exercised; OS theme/accent not changed."));
             Settings.UseAcrylic = true; _window.RefreshAppearanceForVerification();
             bool acrylicExpected = Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController.IsSupported() && !new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
             result.Checks.Add(new("The tray uses desktop Acrylic with a solid fallback", acrylicExpected ? _window.SystemBackdrop is DesktopAcrylicBackdrop && ((UIElement)root.FindName("SolidBackground")).Visibility == Visibility.Collapsed : _window.SystemBackdrop is null,
@@ -106,6 +134,12 @@ internal sealed partial class AppController
             await _window.WaitForPresentationForVerificationAsync();
             result.Checks.Add(new("Dismissing during preparation cannot reveal a stale flyout", !_window.IsShown && !_window.EntranceRunning,
                 "Show then immediate Hide uses the real asynchronous presentation path; cancelled request must remain hidden."));
+            _window.ShowPanel(keyboard);
+            await _window.WaitForPreparationForVerificationAsync();
+            _window.HidePanel();
+            await Task.Delay(350);
+            result.Checks.Add(new("Dismissing a moving banner cancels motion and removes its clipping region", !_window.IsShown && !_window.EntranceRunning && !_window.BannerClipActive && FlyoutTestGetWindowRgnBox(appearanceHwnd, out _) == 0,
+                "Hide during the real entrance, then wait beyond its duration; no stale timer may reveal or move the banner."));
             _window.ShowPanel(keyboard);
             await _window.WaitForPresentationForVerificationAsync();
 
@@ -145,7 +179,7 @@ internal sealed partial class AppController
 
             var editor = Element<TextBox>("brightness:ui-flyout:1:value");
             bool editorFocused = editor.Focus(FocusState.Keyboard);
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             _window.HidePanel(); _window.ShowPanel(keyboard);
             bool restoredFocus = await WaitUntilAsync(() => HasFocus(editor));
             result.Checks.Add(new("Reopening the flyout restores its last enabled control", editorFocused && restoredFocus,
@@ -158,7 +192,7 @@ internal sealed partial class AppController
             nint probeHwnd = WinRT.Interop.WindowNative.GetWindowHandle(probe);
             nint panelHwnd = WinRT.Interop.WindowNative.GetWindowHandle(_window);
             _window.ShowPanel(keyboard);
-            await UiVisualVerification.SettleAsync(root); // Finish the queued opening-focus restoration before transferring activation.
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root); // Finish the queued opening-focus restoration before transferring activation.
             bool panelWasForeground = await WaitUntilAsync(() => _window.IsShown && FlyoutTestGetForegroundWindow() == panelHwnd);
             bool probeActivated = false, probeForegroundObserved = false, panelDeactivated = false;
             var activationTrace = new List<string>();
@@ -216,7 +250,7 @@ internal sealed partial class AppController
             bool immediateReopen = _window.IsShown;
             result.Checks.Add(new("An unrelated dismissal does not block the next tray activation", panelDeactivated && dismissedBeforeReopen && immediateReopen,
                 $"Native panel Deactivated observed={panelDeactivated}; hidden before toggle={dismissedBeforeReopen}; shown synchronously after toggle={immediateReopen}; call elapsed={reopenWatch.Elapsed.TotalMilliseconds:0.##}ms. Reopen behavior is checked independently of the probe's final foreground result above. Activation request supplied by harness; no native tray click injection."));
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             probe.Close(); probe = null;
 
             tracker.Press(true); tracker.Release(true);
@@ -228,7 +262,7 @@ internal sealed partial class AppController
             _window.TogglePanel(pointer with { PointerGesture = tracker.ConsumeActivation() });
             result.Checks.Add(new("Release before deferred dismissal suppresses only that same tray gesture", delayedDismissGesture != 0 && sameGestureStayedClosed && _window.IsShown,
                 $"Released token={delayedDismissGesture}; same gesture stayed closed={sameGestureStayedClosed}; next gesture reopened={_window.IsShown}. Simulated request sequence through production methods."));
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
 
             _window.DismissForVerification(701);
             _window.TogglePanel(keyboard with { PointerGesture = 701 });
@@ -238,7 +272,7 @@ internal sealed partial class AppController
             _window.ShowPanel(pointer with { PointerGesture = 702 });
             result.Checks.Add(new("An explicit panel request opens despite a previous dismissal token", _window.IsShown,
                 "Production ShowPanel used, matching the tray menu command rather than toggle semantics."));
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
 
             var moreButton = (Button)root.FindName("MoreButton");
             moreFlyout = moreButton.Flyout as MenuFlyout ?? throw new InvalidOperationException("The tray More button has no menu flyout.");
@@ -254,20 +288,20 @@ internal sealed partial class AppController
                 $"Opened={opened}; menu item Focus returned={menuFocused}; observed focus={refreshItem.FocusState}; closed event={menuClosed}; panel shown={_window.IsShown}. Actual MenuFlyout.ShowAt and Focus; no menu command invoked."));
             moreFlyout.Hide();
             bool closed = await WaitUntilAsync(() => menuClosed);
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             result.Checks.Add(new("Closing an internal popup keeps the brightness panel open", closed && _window.IsShown,
                 $"Menu Closed observed={closed}; parent shown={_window.IsShown}. Programmatic popup dismissal."));
 
             editor = Element<TextBox>("brightness:ui-flyout:1:value");
             bool draftFocused = editor.Focus(FocusState.Keyboard);
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             double brightnessBefore = LogicalBrightness(_monitors[1]);
             string acceptedText = editor.Text;
             editor.Text = "17";
             _window.DismissFromKeyboardForVerification();
             bool escapeHid = !_window.IsShown;
             await _window.FlushForVerificationAsync();
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             bool draftCancelled = editor.Text == acceptedText && Math.Abs(LogicalBrightness(_monitors[1]) - brightnessBefore) < .01;
             result.Checks.Add(new("Keyboard dismissal hides the panel and cancels an uncommitted numeric draft", draftFocused && escapeHid && draftCancelled,
                 $"Focused={draftFocused}; hidden immediately={escapeHid}; input restored={editor.Text == acceptedText}; brightness={brightnessBefore}→{LogicalBrightness(_monitors[1])}. Production keyboard-dismiss method invoked; physical Escape not injected."));
@@ -288,9 +322,9 @@ internal sealed partial class AppController
             var targetWork = targetArea.WorkArea;
             var targetAnchor = new RectInt32(targetWork.X + targetWork.Width / 2, targetWork.Y + targetWork.Height / 2, 24, 24);
             _window.ShowPanel(new TrayActivation(targetAnchor, true, 0));
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             _window.RecalculateLayoutForVerification();
-            await UiVisualVerification.SettleAsync(root);
+            await _window.WaitForPresentationForVerificationAsync(); await UiVisualVerification.SettleAsync(root);
             var observedArea = DisplayArea.GetFromWindowId(_window.AppWindow.Id, DisplayAreaFallback.Nearest);
             var position = _window.AppWindow.Position;
             var size = _window.AppWindow.Size;
@@ -307,6 +341,7 @@ internal sealed partial class AppController
             _window.SetVerificationHoldOpen(true);
             _window.HidePanel();
             probe?.Close();
+            interactiveStart?.Close();
             UiVisualVerification.RecordProgress(previews, "Flyout focus and lifecycle checks complete", result);
         }
     }
@@ -339,6 +374,10 @@ internal sealed partial class AppController
     }
 
     [StructLayout(LayoutKind.Sequential)] private struct FlyoutTestPoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct FlyoutTestRect { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll", EntryPoint = "GetWindowRect")] private static extern bool FlyoutTestGetWindowRect(nint window, out FlyoutTestRect rect);
+    [DllImport("user32.dll", EntryPoint = "GetWindowRgnBox")] private static extern int FlyoutTestGetWindowRgnBox(nint window, out FlyoutTestRect rect);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] private static extern nint FlyoutTestGetWindowLongPtr(nint window, int index);
     [DllImport("user32.dll", EntryPoint = "GetCursorPos")] private static extern bool FlyoutTestGetCursorPos(out FlyoutTestPoint point);
     [DllImport("user32.dll", EntryPoint = "GetForegroundWindow")] private static extern nint FlyoutTestGetForegroundWindow();
     [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] private static extern int FlyoutTestDwmGetWindowAttribute(nint window, int attribute, out int value, int size);

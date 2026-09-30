@@ -1,7 +1,7 @@
-using System.Numerics;
-using Microsoft.UI.Composition;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Hosting;
 using Windows.Graphics;
 using Windows.UI.ViewManagement;
 
@@ -13,24 +13,39 @@ public sealed partial class MainWindow
     private bool _appearanceSubscribed, _preparingPresentation, _presentationHadActivation;
     private uint _presentationRequest;
     private Task _presentationTask = Task.CompletedTask;
-    private Visual? _panelVisual;
+    private readonly DispatcherTimer _entranceTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    private readonly Stopwatch _entranceClock = new();
+    private RectInt32 _entranceWorkArea;
+    private uint _entranceRequest;
+    private WindowSubclass? _animationSubclass;
     internal bool EntranceRunning { get; private set; }
     internal bool LastEntranceAnimated { get; private set; }
     internal bool LastPresentationSettled { get; private set; }
     internal bool LastCloakSucceeded { get; private set; }
     internal RectInt32 RevealedBounds { get; private set; }
+    internal RectInt32 RestingBounds { get; private set; }
+    internal bool BannerClipActive { get; private set; }
 
     private void InitializeSystemAppearance()
     {
         try { _systemUi.ColorValuesChanged += SystemColorsChanged; _appearanceSubscribed = true; }
         catch (System.Runtime.InteropServices.COMException) { }
-        // One Fluent content entrance owns the motion; do not combine it with a
-        // generic top-level window transition while changing its initial bounds.
+        // Keep the HWND a popup even though WinUI exposes an OverlappedPresenter.
+        long style = GetWindowLongPtr(_hwnd, -16).ToInt64();
+        SetWindowLongPtr(_hwnd, -16, (nint)((style & ~0x00CF0000L) | 0x80000000L));
+        MoveBannerWindow(_hwnd, 0, 0, 0, 0, 0, 0x37); // FRAMECHANGED, no move/resize/activation/z-order.
+        _animationSubclass = AnimationWindowProcedure;
+        if (!SetWindowSubclass(_hwnd, _animationSubclass, 1, 0)) _animationSubclass = null;
+        _entranceTimer.Tick += (_, _) => AdvancePanelEntrance();
+        // One whole-surface slide owns the motion; do not combine it with DWM's
+        // generic document-window transition or a second content fade.
         int disabled = 1;
         DwmSetWindowAttribute(_hwnd, 3, ref disabled, sizeof(int));
         Closed += (_, _) =>
         {
             ++_presentationRequest;
+            _entranceTimer.Stop();
+            if (_animationSubclass is not null) RemoveWindowSubclass(_hwnd, _animationSubclass, 1);
             if (!_appearanceSubscribed) return;
             try { _systemUi.ColorValuesChanged -= SystemColorsChanged; }
             catch (System.Runtime.InteropServices.COMException) { }
@@ -121,8 +136,8 @@ public sealed partial class MainWindow
                 HidePanel();
                 return;
             }
-            RevealedBounds = CurrentPanelBounds();
             StartPanelEntrance(request);
+            RevealedBounds = CurrentPanelBounds();
             SetPanelCloaked(false);
             _preparingPresentation = false;
             Activate(); SetForegroundWindow(_hwnd);
@@ -145,40 +160,78 @@ public sealed partial class MainWindow
     private void StartPanelEntrance(uint request)
     {
         ResetPanelEntrance();
-        LastEntranceAnimated = _systemUi.AnimationsEnabled && !_accessibility.HighContrast;
+        RestingBounds = CurrentPanelBounds();
+        LastEntranceAnimated = _systemUi.AnimationsEnabled && !_accessibility.HighContrast && _animationSubclass is not null;
         if (!LastEntranceAnimated) return;
-        ElementCompositionPreview.SetIsTranslationEnabled(PanelLayout, true);
-        _panelVisual = ElementCompositionPreview.GetElementVisual(PanelLayout);
-        var compositor = _panelVisual.Compositor;
-        var easing = compositor.CreateCubicBezierEasingFunction(Vector2.Zero, new Vector2(0, 1));
-        // WinUI ControlFastAnimationDuration: 167 ms, Fast Out / Slow In.
-        var duration = TimeSpan.FromMilliseconds(167);
-        var fade = compositor.CreateScalarKeyFrameAnimation();
-        fade.Duration = duration; fade.InsertKeyFrame(0, 0); fade.InsertKeyFrame(1, 1, easing);
-        var slide = compositor.CreateVector3KeyFrameAnimation();
-        slide.Duration = duration;
-        slide.InsertKeyFrame(0, new Vector3(0, 8, 0)); slide.InsertKeyFrame(1, Vector3.Zero, easing);
-        var batch = compositor.CreateScopedBatch(CompositionBatchTypes.Animation);
+        _entranceWorkArea = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+        _entranceRequest = request;
         EntranceRunning = true;
-        _panelVisual.StartAnimation("Opacity", fade);
-        _panelVisual.StartAnimation("Translation", slide);
-        batch.Completed += (_, _) =>
+        SetBannerPose(0);
+        if (!EntranceRunning) return;
+        _entranceClock.Restart();
+        _entranceTimer.Start();
+    }
+
+    private void AdvancePanelEntrance()
+    {
+        if (!EntranceRunning || _closing || !IsShown || _entranceRequest != _presentationRequest) { ResetPanelEntrance(); return; }
+        double progress = Math.Clamp(_entranceClock.Elapsed.TotalMilliseconds / 300, 0, 1);
+        if (progress < 1) { SetBannerPose(progress); return; }
+        // Restore the target monitor before accepting DPI changes again.
+        MoveBannerWindow(_hwnd, 0, RestingBounds.X, RestingBounds.Y, 0, 0, 0x215);
+        ResetPanelEntrance();
+        PositionPanel();
+        QueuePendingPanelFocus();
+    }
+
+    private void SetBannerPose(double progress)
+    {
+        double remaining = Math.Pow(1 - progress, 5);
+        int offset = (int)Math.Round((_entranceWorkArea.X + _entranceWorkArea.Width - RestingBounds.X + 1) * remaining);
+        int x = RestingBounds.X + offset;
+        // Clip the whole native surface, including Acrylic, at the chosen work
+        // area's edge. It must not appear on an adjacent monitor while sliding.
+        int visibleWidth = Math.Clamp(_entranceWorkArea.X + _entranceWorkArea.Width - x, 0, RestingBounds.Width);
+        nint region = CreateRectRgn(0, 0, visibleWidth, RestingBounds.Height);
+        if (region == 0 || SetWindowRgn(_hwnd, region, true) == 0)
         {
-            if (request == _presentationRequest) EntranceRunning = false;
-            batch.Dispose();
-        };
-        batch.End();
+            if (region != 0) DeleteObject(region);
+            // A failed clip must never expose a banner on the next screen.
+            MoveBannerWindow(_hwnd, 0, RestingBounds.X, RestingBounds.Y, 0, 0, 0x215);
+            ResetPanelEntrance();
+            QueuePendingPanelFocus();
+            return;
+        }
+        BannerClipActive = true; // The system owns the successfully assigned region.
+        MoveBannerWindow(_hwnd, 0, x, RestingBounds.Y, 0, 0, 0x215);
     }
 
     private void ResetPanelEntrance()
     {
         EntranceRunning = false;
-        if (_panelVisual is null || _closing) return;
-        _panelVisual.StopAnimation("Opacity");
-        _panelVisual.StopAnimation("Translation");
-        _panelVisual.Opacity = 1;
-        _panelVisual.Properties.InsertVector3("Translation", Vector3.Zero);
+        _entranceTimer.Stop();
+        _entranceClock.Stop();
+        if (BannerClipActive && !_closing) SetWindowRgn(_hwnd, 0, true);
+        BannerClipActive = false;
     }
+
+    private nint AnimationWindowProcedure(nint window, uint message, nuint wParam, nint lParam, nuint id, nuint data)
+    {
+        // Only the temporary off-screen entrance pose can cross a monitor edge.
+        // Keep the settled target scale until the window returns to that monitor.
+        // Ordinary placement and real DPI changes continue through WinUI normally.
+        if (message == 0x02E0 && EntranceRunning) return 0; // WM_DPICHANGED
+        return DefSubclassProc(window, message, wParam, lParam);
+    }
+
+    private delegate nint WindowSubclass(nint window, uint message, nuint wParam, nint lParam, nuint id, nuint data);
+    [DllImport("comctl32.dll")] private static extern bool SetWindowSubclass(nint window, WindowSubclass callback, nuint id, nuint data);
+    [DllImport("comctl32.dll")] private static extern bool RemoveWindowSubclass(nint window, WindowSubclass callback, nuint id);
+    [DllImport("comctl32.dll")] private static extern nint DefSubclassProc(nint window, uint message, nuint wParam, nint lParam);
+    [DllImport("user32.dll", EntryPoint = "SetWindowPos")] private static extern bool MoveBannerWindow(nint window, nint after, int x, int y, int width, int height, uint flags);
+    [DllImport("gdi32.dll")] private static extern nint CreateRectRgn(int left, int top, int right, int bottom);
+    [DllImport("gdi32.dll")] private static extern bool DeleteObject(nint value);
+    [DllImport("user32.dll")] private static extern int SetWindowRgn(nint window, nint region, bool redraw);
 
     private void CancelPanelPresentation()
     {
@@ -187,10 +240,18 @@ public sealed partial class MainWindow
         ResetPanelEntrance();
     }
 
-    internal Task WaitForPresentationForVerificationAsync()
+    internal Task WaitForPreparationForVerificationAsync()
     {
         if (!_controller.IsSmokeTest) throw new InvalidOperationException("Only the isolated smoke harness may await presentation.");
         return _presentationTask;
+    }
+
+    internal async Task WaitForPresentationForVerificationAsync()
+    {
+        await WaitForPreparationForVerificationAsync();
+        long deadline = Environment.TickCount64 + 1500;
+        while (EntranceRunning && Environment.TickCount64 < deadline) await Task.Delay(16);
+        if (EntranceRunning) throw new TimeoutException("The banner entrance did not finish.");
     }
 
     internal void RefreshAppearanceForVerification()

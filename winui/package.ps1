@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'ARM64')][string] $Architecture = 'x64',
-    [string] $Version = '0.3.2',
+    [string] $Version = '0.3.3',
     [ValidateRange(0, 65535)][int] $MsixRevision = 0,
     [string] $Publisher = 'CN=BK927',
     [string] $PublishDirectory,
