@@ -1,0 +1,68 @@
+<Window x:Class="TwinkleTray.WinUI.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Twinkle Tray Native">
+    <Grid x:Name="Root" KeyDown="Root_KeyDown" TabFocusNavigation="Cycle">
+      <Grid.Resources>
+        <ResourceDictionary>
+          <ResourceDictionary.ThemeDictionaries>
+            <ResourceDictionary x:Key="Light">
+              <SolidColorBrush x:Key="TextControlBackground" Color="Transparent"/>
+              <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
+              <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
+            </ResourceDictionary>
+            <ResourceDictionary x:Key="Dark">
+              <SolidColorBrush x:Key="TextControlBackground" Color="Transparent"/>
+              <SolidColorBrush x:Key="TextControlBorderBrush" Color="Transparent"/>
+              <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="Transparent"/>
+            </ResourceDictionary>
+            <ResourceDictionary x:Key="HighContrast">
+              <SolidColorBrush x:Key="TextControlBackground" Color="{ThemeResource SystemColorWindowColor}"/>
+              <SolidColorBrush x:Key="TextControlBorderBrush" Color="{ThemeResource SystemColorWindowTextColor}"/>
+              <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="{ThemeResource SystemColorHighlightColor}"/>
+            </ResourceDictionary>
+          </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+      </Grid.Resources>
+      <Grid.ContextFlyout>
+        <MenuFlyout><MenuFlyoutItem x:Name="RefreshMenuItem" Text="Refresh displays (F5)" Click="Refresh_Click"><MenuFlyoutItem.Icon><SymbolIcon Symbol="Refresh"/></MenuFlyoutItem.Icon></MenuFlyoutItem></MenuFlyout>
+      </Grid.ContextFlyout>
+      <Border x:Name="SolidBackground" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
+      <Border x:Name="TintedBackground" Visibility="Collapsed" />
+      <Grid x:Name="PanelLayout">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <Border x:Name="ToolbarSurface" Grid.Row="2" Padding="20,10,16,14">
+          <Grid x:Name="PanelHeader" ColumnSpacing="8">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBlock x:Name="Heading" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Adjust Brightness" TextTrimming="CharacterEllipsis" />
+              <ProgressRing x:Name="RefreshProgress" Grid.Column="1" Width="16" Height="16" MinWidth="16" MinHeight="16" Margin="8,0,0,0" IsActive="False" Opacity="0" VerticalAlignment="Center"/>
+            </Grid>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+              <ToggleButton x:Name="LinkButton" Style="{StaticResource ToolbarToggleButtonStyle}" Click="Link_Click"><FontIcon Glyph="&#xE71B;" FontSize="16"/></ToggleButton>
+              <Button x:Name="SettingsButton" Style="{StaticResource ToolbarButtonStyle}" Click="Settings_Click"><FontIcon Glyph="&#xE713;" FontSize="16"/></Button>
+              <Button x:Name="MoreButton" Style="{StaticResource ToolbarButtonStyle}" AutomationProperties.Name="More options">
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuFlyoutItem x:Name="RefreshMoreMenuItem" Text="Refresh displays (F5)" Click="Refresh_Click">
+                      <MenuFlyoutItem.Icon><SymbolIcon Symbol="Refresh"/></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                    <MenuFlyoutItem x:Name="PowerMenuItem" Text="Turn off displays" Click="Power_Click">
+                      <MenuFlyoutItem.Icon><FontIcon Glyph="&#xF71D;"/></MenuFlyoutItem.Icon>
+                    </MenuFlyoutItem>
+                  </MenuFlyout>
+                </Button.Flyout>
+                <FontIcon Glyph="&#xE712;" FontSize="16"/>
+              </Button>
+            </StackPanel>
+          </Grid>
+        </Border>
+        <ScrollViewer x:Name="BodyScroll" Grid.Row="1" Margin="20,20,20,0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" IsTabStop="False">
+            <StackPanel x:Name="PanelBody" Spacing="12">
+                <StackPanel x:Name="MonitorList" Spacing="20" />
+                <InfoBar x:Name="ErrorBar" IsOpen="False" Severity="Error" IsClosable="True" FontSize="13" />
+            </StackPanel>
+        </ScrollViewer>
+      </Grid>
+      <Border x:Name="PanelOutline" BorderBrush="{ThemeResource SurfaceStrokeColorFlyoutBrush}" BorderThickness="1" CornerRadius="8" IsHitTestVisible="False" />
+    </Grid>
+</Window>

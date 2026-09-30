@@ -1,0 +1,77 @@
+name: Twinkle Tray Native release packages
+
+on:
+  push:
+    tags: ['winui-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Semantic version matching the native project (for example 0.3.5 or 0.4.0-beta.1)'
+        required: true
+        default: '0.3.5'
+
+permissions:
+  contents: read
+
+jobs:
+  packages:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    strategy:
+      matrix:
+        architecture: [x64, ARM64]
+    env:
+      NUGET_PACKAGES: C:\nuget
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Validate version and build
+        env:
+          RELEASE_INPUT: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          $version = if ($env:EVENT_NAME -eq 'push') { $env:REF_NAME.Substring(7) } else { $env:RELEASE_INPUT }
+          $match = [regex]::Match($version, '\A(?<base>(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?:-(?<pre>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\z')
+          if (-not $match.Success) { throw 'Invalid WinUI semantic release version.' }
+          if (@($match.Groups['pre'].Value.Split('.') | Where-Object { $_ -match '^0[0-9]+$' }).Count -gt 0) { throw 'Numeric prerelease identifiers cannot have leading zeroes.' }
+          [xml]$project = Get-Content winui/TwinkleTray.WinUI/TwinkleTray.WinUI.csproj
+          if ($project.Project.PropertyGroup.Version -ne $version) { throw 'Release version must match the committed project version.' }
+          "RELEASE_VERSION=$version" | Add-Content $env:GITHUB_ENV
+          ./winui/build.ps1 -Architecture '${{ matrix.architecture }}'
+          ./winui/package.ps1 -Architecture '${{ matrix.architecture }}' -Version $version
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packages-${{ matrix.architecture }}
+          path: winui/artifacts/packages/*
+          if-no-files-found: error
+  release:
+    if: github.event_name == 'push'
+    needs: packages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Create release with checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          cat packages/SHA256SUMS-x64.txt packages/SHA256SUMS-ARM64.txt > packages/SHA256SUMS.txt
+          release_version="${RELEASE_TAG#winui-v}"
+          version_without_metadata="${release_version%%+*}"
+          prerelease_args=()
+          if [[ "$version_without_metadata" == *-* ]]; then prerelease_args+=(--prerelease); fi
+          gh release create "$RELEASE_TAG" packages/*.zip packages/*.msix packages/SHA256SUMS.txt --repo "$REPOSITORY" --title "Twinkle Tray Native $release_version" --generate-notes "${prerelease_args[@]}"

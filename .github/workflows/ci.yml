@@ -1,6 +1,24 @@
 name: CI Build
 
-on: [push, pull_request]
+on:
+  push:
+    paths-ignore:
+      - 'winui/**'
+      - 'README.md'
+      - 'docs/README.upstream.md'
+      - '.gitignore'
+      - '.github/workflows/winui.yml'
+      - '.github/workflows/winui-release.yml'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths-ignore:
+      - 'winui/**'
+      - 'README.md'
+      - 'docs/README.upstream.md'
+      - '.gitignore'
+      - '.github/workflows/winui.yml'
+      - '.github/workflows/winui-release.yml'
+      - '.github/workflows/ci.yml'
 
 env:
  BRANCH_NAME: ${{ github.head_ref || github.ref_name }} 

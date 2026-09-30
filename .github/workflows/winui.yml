@@ -1,0 +1,110 @@
+name: Twinkle Tray Native
+
+on:
+  push:
+    paths:
+      - 'winui/**'
+      - 'src/assets/**'
+      - 'src/localization/**'
+      - '.github/workflows/winui.yml'
+      - 'LICENSE'
+  pull_request:
+    paths:
+      - 'winui/**'
+      - 'src/assets/**'
+      - 'src/localization/**'
+      - '.github/workflows/winui.yml'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      run_gui_smoke:
+        description: 'Run simulated-display GUI and IPC integration tests when an interactive desktop is available'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: winui-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Windows ${{ matrix.architecture }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, ARM64]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+      DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+      # A short cache path avoids legacy XAML compiler MAX_PATH failures.
+      NUGET_PACKAGES: C:\nuget
+    steps:
+      - name: Read repository
+        uses: actions/checkout@v6
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run package-free core tests
+        if: matrix.architecture == 'x64'
+        working-directory: winui
+        run: dotnet run --project TwinkleTray.Core.Tests --configuration Release
+
+      - name: Publish self-contained application
+        run: ./winui/build.ps1 -Architecture '${{ matrix.architecture }}' -SkipTests
+
+      - name: Run read-only hardware and environment diagnostics
+        if: matrix.architecture == 'x64'
+        working-directory: winui
+        run: dotnet run --project TwinkleTray.Hardware/Diagnostics --configuration Release -- --read-only
+
+      - name: Verify hardware-exercise recovery with simulated devices
+        if: matrix.architecture == 'x64'
+        working-directory: winui
+        run: |
+          $report = Join-Path $PWD 'artifacts/hardware-exercise-self-test.json'
+          dotnet run --no-build --project TwinkleTray.Hardware/Diagnostics --configuration Release -- --exercise-self-test --report $report
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $gammaReport = Join-Path $PWD 'artifacts/gamma-exercise-self-test.json'
+          dotnet run --no-build --project TwinkleTray.Hardware/Diagnostics --configuration Release -- --exercise-gamma-self-test --report $gammaReport
+
+      - name: Create portable ZIP and validate unsigned MSIX
+        run: ./winui/package.ps1 -Architecture '${{ matrix.architecture }}'
+
+      - name: Optional GUI and IPC tests with simulated monitors
+        if: github.event_name == 'workflow_dispatch' && inputs.run_gui_smoke && matrix.architecture == 'x64'
+        run: |
+          if (-not [Environment]::UserInteractive) {
+            'GUI smoke test skipped: this runner has no interactive desktop. Build and core tests still run.' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          ./winui/test-app.ps1 -AppPath './winui/artifacts/win-x64/TwinkleTray.WinUI.exe'
+          'GUI and IPC integration tests passed with two simulated monitors and no hardware writes.' | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload integration-test evidence
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.run_gui_smoke && matrix.architecture == 'x64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: TwinkleTray-Native-test-results-${{ github.sha }}
+          path: winui/artifacts/test-results/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v7
+        with:
+          name: TwinkleTray-Native-${{ matrix.architecture }}-${{ github.sha }}
+          path: winui/artifacts/packages/*
+          if-no-files-found: error
+          retention-days: 14

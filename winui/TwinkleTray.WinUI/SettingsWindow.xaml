@@ -1,0 +1,68 @@
+<Window
+    x:Class="TwinkleTray.WinUI.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Twinkle Tray Native Settings">
+    <Grid x:Name="Root">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="40" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Border x:Name="SolidBackground" Grid.RowSpan="3" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" />
+        <Grid x:Name="TitleBar" Background="Transparent">
+            <StackPanel Orientation="Horizontal" Spacing="10" Margin="16,0,0,0" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE706;" FontSize="16" />
+                <TextBlock x:Name="WindowTitle" Text="Twinkle Tray Native" FontSize="12" />
+            </StackPanel>
+        </Grid>
+        <NavigationView x:Name="Navigation" Grid.Row="1"
+                        IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
+                        IsPaneToggleButtonVisible="False" PaneDisplayMode="Left"
+                        OpenPaneLength="240" CompactPaneLength="48" IsPaneOpen="True"
+                        IsTitleBarAutoPaddingEnabled="False"
+                        SelectionChanged="Navigation_SelectionChanged">
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="GeneralNavigation" Tag="general" Content="General" Icon="Setting" />
+                <NavigationViewItem x:Name="MonitorsNavigation" Tag="monitors" Content="Monitor Settings">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7F4;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="FeaturesNavigation" Tag="features" Content="DDC/CI Features">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9E9;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="TimeNavigation" Tag="time" Content="Time Adjustments" Icon="Clock" />
+                <NavigationViewItem x:Name="HotkeysNavigation" Tag="hotkeys" Content="Hotkeys &amp; Shortcuts">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE765;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="IdleNavigation" Tag="idle" Content="Idle Detection">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE708;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="ProfilesNavigation" Tag="profiles" Content="Profiles">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7C3;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="SensorsNavigation" Tag="sensors" Content="Light Sensor">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE706;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="AdvancedNavigation" Tag="advanced" Content="Advanced">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE713;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="UpdatesNavigation" Tag="updates" Content="Updates">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE895;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="AboutNavigation" Tag="about" Content="About">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE946;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+            <ScrollViewer x:Name="PageScrollViewer" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="PageContent" Margin="32,24,32,32" Spacing="8" MaxWidth="940"
+                            HorizontalAlignment="Stretch" />
+            </ScrollViewer>
+        </NavigationView>
+        <StackPanel Grid.Row="2" Spacing="8" Margin="16,0,16,12">
+            <InfoBar x:Name="StatusBar" IsOpen="False" IsClosable="True" Severity="Informational" />
+            <InfoBar x:Name="SettingsError" IsOpen="False" IsClosable="True" Severity="Error" />
+        </StackPanel>
+    </Grid>
+</Window>
